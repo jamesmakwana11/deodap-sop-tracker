@@ -6,6 +6,12 @@ const optional = z
   .optional()
   .transform((v) => (v && v.trim() !== '' ? v.trim() : undefined));
 
+/** Like `optional`, but keeps the value exactly as given (passwords may not be trimmed). */
+const optionalRaw = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() !== '' ? v : undefined));
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -35,6 +41,14 @@ const EnvSchema = z.object({
     .default('07:30'),
   /** Serve the built client from this directory in production. */
   CLIENT_DIST_DIR: optional,
+
+  /**
+   * First admin, created at start-up only when no users exist yet (see auth/initialAdmin.ts).
+   * Ignored once any user exists; never overwrites or resets anyone.
+   */
+  INITIAL_ADMIN_EMAIL: optional,
+  INITIAL_ADMIN_PASSWORD: optionalRaw,
+  INITIAL_ADMIN_NAME: optional,
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -112,6 +112,23 @@ Admins add users under **Users**. Each new user (and each password reset) gets a
 that must be changed at first sign-in. Deactivating a user signs them out everywhere immediately. The app always
 keeps at least one active admin.
 
+### The first admin
+
+Either run `npm run user:create -- --email you@deodap.com --name "Your Name" --role admin` on the server, or — on
+hosts without a shell before the first sign-in, such as Render — set these server environment variables:
+
+```
+INITIAL_ADMIN_EMAIL=you@deodap.com
+INITIAL_ADMIN_PASSWORD=<at least 10 characters>
+INITIAL_ADMIN_NAME=Your Name        # optional, default "Admin"
+```
+
+At start-up, **only if the data folder has no users at all**, the server creates that admin (password stored as a
+scrypt hash, never in plain text) and you sign in on the normal login page. Once any user exists the variables are
+ignored: they never overwrite, re-create or reset anyone, so changing them later does nothing (change the password
+in the app under **Password**). You can remove them after the first sign-in. If only one is set, or the email or
+password is invalid, the server refuses to start and says why.
+
 ---
 
 ## 5. Deploy to production
@@ -356,7 +373,7 @@ The data folder must be on storage that outlives the app's code. Set `DATA_DIR` 
 |---|---|
 | **Docker / docker compose** | Already set up: the image uses `DATA_DIR=/app/server/data` and `docker-compose.yml` mounts the named volume `data` there. `docker compose down` keeps it; **`docker compose down -v` deletes it**. To use a host folder instead: `volumes: ["/srv/sop-data:/app/server/data"]`. |
 | **VPS / own server (systemd, pm2)** | `DATA_DIR=/var/lib/sop-tracker/data` (outside the code folder, owned by the app's user). Deploying new code never touches it. |
-| **Render** | Add a *Disk* (e.g. mount path `/var/data`) and set `DATA_DIR=/var/data`. |
+| **Render** | Add a *Disk* with mount path `/var/data` and set `DATA_DIR=/var/data`. Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` for the first sign-in (section 4). Without the disk, users and data are lost on every deploy. |
 | **Railway** | Add a *Volume* to the service (e.g. `/data`) and set `DATA_DIR=/data`. |
 | **Fly.io** | `fly volumes create sop_data`, mount it in `fly.toml` (`[mounts] source="sop_data" destination="/data"`), set `DATA_DIR=/data`. Run one machine. |
 | **DigitalOcean App Platform, Heroku, Vercel, Netlify, AWS Lambda** | Not suitable as they are: their file systems are reset on deploy or restart. Use a host above, or add a PostgreSQL backend later. The app shows a warning on these hosts. |

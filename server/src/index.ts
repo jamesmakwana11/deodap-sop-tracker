@@ -1,4 +1,5 @@
 import { createApp } from './app.js';
+import { ensureInitialAdmin } from './auth/initialAdmin.js';
 import { env } from './config/env.js';
 import { ensureRulesSaved } from './services/rulesSnapshot.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
@@ -14,6 +15,14 @@ async function main() {
   await openStore(dir);
   await claimServerLock(store.dataDir);
   await ensureRulesSaved();
+
+  const admin = await ensureInitialAdmin({ email: env.INITIAL_ADMIN_EMAIL, password: env.INITIAL_ADMIN_PASSWORD, name: env.INITIAL_ADMIN_NAME });
+  if (admin === 'created') console.log(`Created the first admin (${env.INITIAL_ADMIN_EMAIL!.toLowerCase()}) from INITIAL_ADMIN_EMAIL.`);
+  else if (admin === 'users-exist' && (env.INITIAL_ADMIN_EMAIL || env.INITIAL_ADMIN_PASSWORD)) {
+    console.log('[users] Users already exist, so INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD are ignored (nothing was changed). You can remove them.');
+  } else if (admin === 'not-configured') {
+    console.warn('[users] No users yet. Set INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD, or run: npm run user:create -- --email <email> --name "<name>" --role admin');
+  }
 
   const status = await getStorageStatus();
   console.log(`Data folder: ${store.dataDir} (storage ${status.persistence})`);
