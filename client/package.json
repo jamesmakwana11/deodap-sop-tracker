@@ -8,7 +8,8 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build:preview": "vite build --mode preview"
+    "build:preview": "node scripts/require-preview-snapshot.mjs && tsc --noEmit -p tsconfig.preview.json && vite build --mode preview",
+    "typecheck:preview": "node scripts/require-preview-snapshot.mjs && tsc --noEmit -p tsconfig.preview.json"
   },
   "dependencies": {
     "@sop/shared": "*",

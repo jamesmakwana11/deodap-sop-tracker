@@ -283,6 +283,11 @@ npm run build:preview --workspace client      # output in client/dist-preview
 The preview runs the real interface against an in-browser copy of that data. Nothing is saved, and Meta
 refresh, live ad previews and downloads are disabled.
 
+`client/src/preview/snapshot.json` is generated sample data, so it is git-ignored and never deployed. The
+production build (`npm run build`, used by Docker and hosts such as Render) does not include or type-check
+`src/preview/`, so it works without the snapshot. Only `build:preview` needs it, and it says how to make it when
+it is missing.
+
 ---
 
 ## 11. Data storage

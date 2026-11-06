@@ -1,0 +1,7 @@
+{
+  // Type-checks the static demo build (npm run build:preview), which needs
+  // src/preview/snapshot.json from `npm run preview:snapshot --workspace server`.
+  "extends": "./tsconfig.json",
+  "include": ["src"],
+  "exclude": []
+}
