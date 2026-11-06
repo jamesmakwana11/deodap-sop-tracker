@@ -1,0 +1,20 @@
+# The tracker in one container. Data is stored as JSON files in the "data" volume.
+# 1. cp .env.example .env and fill it in (see docs/SETUP.md)
+# 2. docker compose up -d --build
+# 3. docker compose exec app npm run user:create -- --email you@deodap.com --name "Your Name" --role admin
+# Put HTTPS (nginx, Caddy, a load balancer) in front of port 4000.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/server/data
+    volumes:
+      - data:/app/server/data
+    ports:
+      - '127.0.0.1:4000:4000'
+
+volumes:
+  data:

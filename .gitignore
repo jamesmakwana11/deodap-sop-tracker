@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.log
+coverage/
+client/src/preview/snapshot.json
+client/dist-preview/
+server/data/

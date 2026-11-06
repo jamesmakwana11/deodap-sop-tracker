@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, serif;
+
+  --color-page: #f3f7fd;
+  --color-ink: #1f2a3d;
+  --color-muted: #55627a;
+  --color-navy: #14306b;
+  --color-brand: #2563eb;
+  --color-line: #dbe5f3;
+  --color-head: #e4edfb;
+  --color-hero: #e2ecfa;
+
+  --color-good: #17803d;
+  --color-good-bg: #e3f5ea;
+  --color-avg: #946200;
+  --color-avg-bg: #fdf3d6;
+  --color-bad: #b42318;
+  --color-bad-bg: #fde4e3;
+  --color-neutral: #64748b;
+}
+
+@layer base {
+  body {
+    @apply bg-page font-sans text-ink antialiased;
+  }
+}
