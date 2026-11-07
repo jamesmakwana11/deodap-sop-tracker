@@ -36,13 +36,18 @@ const AD_FIELDS_MINIMAL = 'id,name,adset_id,campaign_id,effective_status';
 const INSIGHT_FIELDS = 'campaign_id,spend,reach,impressions,actions,action_values';
 const ACTIVE = ['ACTIVE'];
 
-/** Every status a campaign can have in Meta (the values Meta accepts for campaign effective_status). */
-const ALL_CAMPAIGN_STATUSES = ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'];
+/**
+ * effective_status values for the campaigns / adsets / ads COLLECTION edges. DELETED is never
+ * requested: Meta refuses it there ("(#100) Requesting for deleted objects is not supported in
+ * this endpoint", subcode 1815001), and deleted objects are not part of current data. The Graph
+ * client also strips DELETED from any status filter as a safety net.
+ */
+const ALL_CAMPAIGN_STATUSES = ['ACTIVE', 'PAUSED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES'];
 const STATUS_FIELDS = 'id,account_id,name,status,configured_status,effective_status';
 
-/** Ad set and ad statuses Meta accepts in effective_status filters. */
-const ALL_ADSET_STATUSES = ['ACTIVE', 'PAUSED', 'DELETED', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES'];
-const INACTIVE_AD_STATUSES = ['PAUSED', 'DELETED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'ADSET_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'];
+/** Ad set and ad statuses (non-deleted) Meta accepts in effective_status filters. */
+const ALL_ADSET_STATUSES = ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES'];
+const INACTIVE_AD_STATUSES = ['PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'ADSET_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'];
 const CHILD_STATUS_FIELDS = 'id,campaign_id,adset_id,effective_status';
 /** Campaign IDs per filtered request. */
 const CAMPAIGN_FILTER_CHUNK = 50;
@@ -108,34 +113,23 @@ const uniqueById = <T extends { id: string }>(rows: T[]): T[] => {
 };
 
 /**
- * Lists the account's campaigns in every status (one light request, all pages) and counts them
- * by Meta effective_status, one per unique campaign ID. If Meta refuses to list deleted
- * campaigns, the count is made without them and says so.
+ * Lists the account's campaigns in every non-deleted status (one light request, all pages) and
+ * counts them by Meta effective_status, one per unique campaign ID.
  */
 export async function fetchCampaignStatusCounts(graph: GraphClient, metaAccountId: string, now = new Date()): Promise<MetaCampaignStatusCounts> {
   const act = `act_${metaAccountId}`;
-  const list = (statuses: string[]) =>
-    graph.getAll<{ id: string; account_id?: string; effective_status?: string; status?: string }>(`${act}/campaigns`, {
-      fields: STATUS_FIELDS,
-      effective_status: statuses,
-      limit: 500,
-    });
-  let deletedIncluded = true;
-  let rows;
-  try {
-    rows = await list(ALL_CAMPAIGN_STATUSES);
-  } catch (err) {
-    if (!(err instanceof MetaApiError) || err.isTokenInvalid || err.isTransient) throw err;
-    deletedIncluded = false;
-    rows = await list(ALL_CAMPAIGN_STATUSES.filter((s) => s !== 'DELETED'));
-  }
+  const rows = await graph.getAll<{ id: string; account_id?: string; effective_status?: string; status?: string }>(`${act}/campaigns`, {
+    fields: STATUS_FIELDS,
+    effective_status: ALL_CAMPAIGN_STATUSES,
+    limit: 500,
+  });
   const byEffectiveStatus: Record<string, number> = {};
-  const unique = uniqueById(rows).filter((r) => !r.account_id || r.account_id === metaAccountId);
+  const unique = uniqueById(rows).filter((r) => (!r.account_id || r.account_id === metaAccountId) && r.effective_status !== 'DELETED');
   for (const r of unique) {
     const s = r.effective_status ?? r.status ?? 'UNKNOWN';
     byEffectiveStatus[s] = (byEffectiveStatus[s] ?? 0) + 1;
   }
-  return { total: unique.length, byEffectiveStatus, deletedIncluded, countedAt: now.toISOString() };
+  return { total: unique.length, byEffectiveStatus, countedAt: now.toISOString() };
 }
 const DAY = 86_400_000;
 

@@ -114,7 +114,6 @@ async function executeRun(runId: string, accounts: AdAccountInfo[], now: Date): 
       let counts: MetaCampaignStatusCounts | null = null;
       try {
         counts = await fetchCampaignStatusCounts(graph, account.metaAccountId, now);
-        if (!counts.deletedIncluded) notes.push('Meta did not list deleted campaigns, so Total campaigns excludes them.');
         const activeListed = counts.byEffectiveStatus.ACTIVE ?? 0;
         if (activeListed !== snapshots.length) {
           notes.push(`Meta listed ${activeListed} campaigns with status Active in the count but ${snapshots.length} in the audit read; a campaign probably changed status during the refresh.`);

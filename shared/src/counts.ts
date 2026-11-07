@@ -1,7 +1,7 @@
 /**
  * Campaign counts. A campaign is ACTIVE only when the campaign, every one of its ad sets and every
  * one of its ads have Meta effective_status ACTIVE (and it has started and not ended). One paused,
- * archived, deleted, in-review or otherwise inactive ad set or ad excludes the whole campaign.
+ * archived, in-review or otherwise inactive ad set or ad excludes the whole campaign.
  * Every campaign with Meta status ACTIVE is still audited for the SOP and rated as before; this
  * only decides which ones count and show as Active.
  */
@@ -70,24 +70,23 @@ export function deliveryState(
 
 /** Campaigns per Meta effective_status for one ad account, every status, unique campaign IDs. */
 export interface MetaCampaignStatusCounts {
-  /** Unique campaign IDs Meta returned across all statuses requested. */
+  /** Unique campaign IDs Meta returned across the (non-deleted) statuses requested. */
   total: number;
   byEffectiveStatus: Record<string, number>;
-  /** False when Meta refused to list deleted campaigns (then Total excludes them). */
-  deletedIncluded: boolean;
+  /** Only on audits made before deleted campaigns were dropped from the listing. */
+  deletedIncluded?: boolean;
   countedAt: string;
 }
 
 export interface AccountCampaignCounts {
   metaAccountId: string;
   name: string;
-  /** All statuses, unique campaign IDs. Null when this audit has no status listing for the account. */
+  /** Every non-deleted campaign, unique campaign IDs. Null when this audit has no status listing for the account. */
   total: number | null;
   /** Campaigns whose own Meta status is ACTIVE, from the status listing. */
   metaActive: number | null;
   paused: number | null;
   archived: number | null;
-  deleted: number | null;
   other: number | null;
   /** Campaigns with Meta status ACTIVE that were audited. */
   audited: number;
@@ -97,7 +96,6 @@ export interface AccountCampaignCounts {
   excluded: Record<ExclusionReason, number>;
   /** Meta's ACTIVE count equals the campaigns audited; null when there is no listing to compare. */
   reconciled: boolean | null;
-  deletedIncluded: boolean | null;
 }
 
 export interface CampaignCountsSummary {
@@ -123,6 +121,8 @@ export function groupStatusCounts(byEffectiveStatus: Record<string, number>) {
 }
 
 /**
+ * Deleted campaigns are never part of current totals: Meta does not list them on the campaigns
+ * edge, and audits made before that change have them subtracted here.
  * Counts for ONE audit (never mixed with older snapshots): per selected ad account from Meta's
  * status listing and the strict state of each audited campaign, plus All accounts. Campaigns are
  * counted once per Meta campaign ID; ad sets and ads are never counted as campaigns.
@@ -148,20 +148,18 @@ export function buildCampaignCounts(
     return {
       metaAccountId: a.metaAccountId,
       name: a.name,
-      total: m?.total ?? null,
+      total: m && g ? m.total - g.deleted : null,
       metaActive: g?.active ?? null,
       paused: g?.paused ?? null,
       archived: g?.archived ?? null,
-      deleted: g?.deleted ?? null,
       other: g?.other ?? null,
       audited: mine.length,
       active,
       excluded,
       reconciled: g ? g.active === mine.length : null,
-      deletedIncluded: m?.deletedIncluded ?? null,
     };
   });
-  const sum = (k: 'total' | 'metaActive' | 'paused' | 'archived' | 'deleted' | 'other') =>
+  const sum = (k: 'total' | 'metaActive' | 'paused' | 'archived' | 'other') =>
     rows.length && rows.every((r) => r[k] !== null) ? rows.reduce((s, r) => s + r[k]!, 0) : null;
   const excluded = emptyExcluded();
   for (const r of rows) for (const k of EXCLUSION_REASONS) excluded[k] += r.excluded[k];
@@ -172,13 +170,11 @@ export function buildCampaignCounts(
     metaActive: sum('metaActive'),
     paused: sum('paused'),
     archived: sum('archived'),
-    deleted: sum('deleted'),
     other: sum('other'),
     audited: rows.reduce((s, r) => s + r.audited, 0),
     active: rows.reduce((s, r) => s + r.active, 0),
     excluded,
     reconciled: rows.length && rows.every((r) => r.reconciled !== null) ? rows.every((r) => r.reconciled) : null,
-    deletedIncluded: rows.length && rows.every((r) => r.deletedIncluded !== null) ? rows.every((r) => r.deletedIncluded) : null,
   };
   return { accounts: rows, all, activeKnown: unique.every((c) => deliveryChecked(c.delivery)), lastSuccessfulSyncAt };
 }

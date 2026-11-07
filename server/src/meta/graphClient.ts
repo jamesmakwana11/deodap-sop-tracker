@@ -119,6 +119,37 @@ export class MetaApiError extends Error {
   }
 }
 
+/**
+ * Removes DELETED from effective_status filters (the effective_status param and any `filtering`
+ * entry on *.effective_status). Meta refuses deleted objects on the campaigns / adsets / ads
+ * collection edges (error 100/1815001), and the tracker never needs them.
+ */
+export function stripDeletedStatus(url: URL): void {
+  const es = url.searchParams.get('effective_status');
+  if (es) {
+    try {
+      const list = JSON.parse(es) as unknown;
+      if (Array.isArray(list)) url.searchParams.set('effective_status', JSON.stringify(list.filter((v) => v !== 'DELETED')));
+    } catch {
+      /* not a JSON list: leave as is */
+    }
+  }
+  const f = url.searchParams.get('filtering');
+  if (f) {
+    try {
+      const rules = JSON.parse(f) as { field?: string; value?: unknown }[];
+      if (Array.isArray(rules)) {
+        const cleaned = rules.map((r) =>
+          typeof r?.field === 'string' && /(^|\.)effective_status$/.test(r.field) && Array.isArray(r.value) ? { ...r, value: r.value.filter((v) => v !== 'DELETED') } : r,
+        );
+        url.searchParams.set('filtering', JSON.stringify(cleaned));
+      }
+    } catch {
+      /* leave as is */
+    }
+  }
+}
+
 export type GraphParams = Record<string, string | number | boolean | object | undefined>;
 
 export interface GraphClientOptions {
@@ -184,6 +215,7 @@ export class GraphClient {
     // The token travels in a header, not the URL, so it never lands in proxy or access logs.
     url.searchParams.delete('access_token');
     url.searchParams.delete('method'); // read-only, including on paging links returned by Meta
+    stripDeletedStatus(url); // never ask a collection edge for deleted objects, also on paging links
     if (this.proof) url.searchParams.set('appsecret_proof', this.proof);
 
     const maxRetries = this.opts.maxRetries ?? 4;

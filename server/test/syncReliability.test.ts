@@ -187,9 +187,9 @@ describe('several accounts', () => {
     const { agent } = await signedIn(app, 'viewer');
     const dash = (await agent.get('/api/dashboard')).body as DashboardResponse;
     const rows = Object.fromEntries(dash.counts.accounts.map((a) => [a.name, a]));
-    expect(rows.DeoDap).toMatchObject({ total: 9, metaActive: 4, active: 1 });
+    expect(rows.DeoDap).toMatchObject({ total: 8, metaActive: 4, active: 1 }); // the deleted campaign is not current data
     expect(rows.Dabster).toMatchObject({ total: 1, metaActive: 1, active: 1 });
-    expect(dash.counts.all).toMatchObject({ name: 'All accounts', total: 10, metaActive: 5, audited: 5, active: 2 });
+    expect(dash.counts.all).toMatchObject({ name: 'All accounts', total: 9, metaActive: 5, audited: 5, active: 2 });
     expect(dash.counts.activeKnown).toBe(true);
     expect(dash.summary.totals.active).toBe(2);
   });

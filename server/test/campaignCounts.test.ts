@@ -2,11 +2,11 @@
 import { buildCampaignCounts, deliveryState, type DashboardResponse, type DeliveryState } from '@sop/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { fetchCampaignStatusCounts } from '../src/meta/fetchAccount.js';
-import { GraphClient } from '../src/meta/graphClient.js';
+import { explainMetaError } from '../src/meta/permissions.js';
+import { GraphClient, MetaApiError } from '../src/meta/graphClient.js';
 import { startSync } from '../src/services/syncService.js';
-import { closeStore } from '../src/storage/store.js';
-import { graphError, installFakeGraph } from './fakeGraph.js';
+import { closeStore, store } from '../src/storage/store.js';
+import { DELETED_REFUSED, graphError, installFakeGraph } from './fakeGraph.js';
 import { connectFakeMeta, NOW, world } from './fakeMetaWorld.js';
 import * as real from './fixtures/deodapRealStatus.js';
 import { prepareDb, resetDb, signedIn } from './helpers.js';
@@ -46,7 +46,7 @@ describe('strict Active, on REAL DeoDap data from Meta (7 Nov 2026)', () => {
 
   it('builds the DeoDap row and All accounts from it', () => {
     const counts = buildCampaignCounts(
-      [{ metaAccountId: real.ACCOUNT_ID, name: 'DeoDap', status: 'succeeded', campaignCounts: { total: 70, byEffectiveStatus: { ACTIVE: 70 }, deletedIncluded: true, countedAt: '' } }],
+      [{ metaAccountId: real.ACCOUNT_ID, name: 'DeoDap', status: 'succeeded', campaignCounts: { total: 70, byEffectiveStatus: { ACTIVE: 70 }, countedAt: '' } }],
       real.activeCampaigns.map((c, i) => ({ metaCampaignId: c.id, account: { metaAccountId: real.ACCOUNT_ID }, delivery: states[i]! })),
       null,
     );
@@ -84,11 +84,12 @@ describe('strict rule, every combination', () => {
     expect(deliveryState({ stop_time: '2026-11-01T00:00:00Z' }, [set('s')], [ad('s')], now)).toBe('ENDED');
   });
 
-  it('counts each campaign ID once, per account and All accounts, and treats older audits as not checked', () => {
+  it('counts each campaign ID once, per account and All accounts, never counts deleted ones, and treats older audits as not checked', () => {
     const counts = buildCampaignCounts(
       [
+        // An audit stored before deleted campaigns were dropped: its 1 deleted campaign is not counted.
         { metaAccountId: '1', name: 'DeoDap', status: 'succeeded', campaignCounts: { total: 9, byEffectiveStatus: { ACTIVE: 2, PAUSED: 3, ARCHIVED: 2, DELETED: 1, WITH_ISSUES: 1 }, deletedIncluded: true, countedAt: '' } },
-        { metaAccountId: '2', name: 'Dabster', status: 'succeeded', campaignCounts: { total: 4, byEffectiveStatus: { ACTIVE: 1, PAUSED: 3 }, deletedIncluded: true, countedAt: '' } },
+        { metaAccountId: '2', name: 'Dabster', status: 'succeeded', campaignCounts: { total: 4, byEffectiveStatus: { ACTIVE: 1, PAUSED: 3 }, countedAt: '' } },
       ],
       [
         { metaCampaignId: 'x', account: { metaAccountId: '1' }, delivery: 'ACTIVE' },
@@ -98,11 +99,11 @@ describe('strict rule, every combination', () => {
       ],
       '2026-11-07T08:00:00Z',
     );
-    expect(counts.accounts.map((r) => [r.name, r.total, r.metaActive, r.paused, r.archived, r.deleted, r.other, r.audited, r.active, r.reconciled])).toEqual([
-      ['DeoDap', 9, 2, 3, 2, 1, 1, 2, 1, true],
-      ['Dabster', 4, 1, 3, 0, 0, 0, 1, 1, true],
+    expect(counts.accounts.map((r) => [r.name, r.total, r.metaActive, r.paused, r.archived, r.other, r.audited, r.active, r.reconciled])).toEqual([
+      ['DeoDap', 8, 2, 3, 2, 1, 2, 1, true],
+      ['Dabster', 4, 1, 3, 0, 0, 1, 1, true],
     ]);
-    expect(counts.all).toMatchObject({ total: 13, metaActive: 3, paused: 6, archived: 2, deleted: 1, other: 1, audited: 3, active: 2, reconciled: true });
+    expect(counts.all).toMatchObject({ total: 12, metaActive: 3, paused: 6, archived: 2, other: 1, audited: 3, active: 2, reconciled: true });
     expect(counts.all.excluded.HAS_INACTIVE_ADS).toBe(1);
 
     // An audit made with the earlier, looser rule: no Active count until the next refresh.
@@ -130,15 +131,21 @@ describe('sync (FAKE Meta world)', () => {
     const adSetReads = fake.requests.filter((r) => r.path === 'act_1001/adsets');
     expect(adSetReads).toHaveLength(1);
     expect(JSON.parse(adSetReads[0]!.params.get('filtering')!)).toEqual([{ field: 'campaign.id', operator: 'IN', value: ['c1', 'c2', 'c3', 'c4'] }]);
-    expect(JSON.parse(adSetReads[0]!.params.get('effective_status')!)).toEqual(expect.arrayContaining(['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED']));
+    expect(JSON.parse(adSetReads[0]!.params.get('effective_status')!)).toEqual(expect.arrayContaining(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED']));
+    // Meta refuses DELETED on these edges (100/1815001): never asked for, on any campaigns / adsets / ads request.
+    const collection = fake.requests.filter((r) => /^act_\d+\/(campaigns|adsets|ads)$/.test(r.path));
+    expect(collection.length).toBeGreaterThan(3);
+    for (const r of collection) expect(`${r.params.get('effective_status')} ${r.params.get('filtering')}`).not.toContain('DELETED');
+    expect(store.c.auditRuns.all()[0]!.accounts.find((a) => a.status === 'succeeded')?.notes ?? []).toEqual([]);
 
     const { agent } = await signedIn(app, 'viewer');
     const dash = (await agent.get('/api/dashboard')).body as DashboardResponse;
     const state = Object.fromEntries(dash.campaigns.map((c) => [c.metaCampaignId, c.delivery]));
     expect(state).toEqual({ c1: 'ACTIVE', c2: 'HAS_INACTIVE_AD_SETS', c3: 'NO_ACTIVE_ADS', c4: 'HAS_INACTIVE_ADS' });
     const one = dash.counts.accounts.find((a) => a.metaAccountId === '1001')!;
-    // Total: 9 campaigns although page 2 repeated one; ad sets and ads are not counted as campaigns.
-    expect(one).toMatchObject({ total: 9, metaActive: 4, paused: 2, archived: 1, deleted: 1, other: 1, audited: 4, active: 1, reconciled: true });
+    // Total: 8 campaigns although page 2 repeated one; the deleted campaign, ad sets and ads are not counted.
+    expect(one).toMatchObject({ total: 8, metaActive: 4, paused: 2, archived: 1, other: 1, audited: 4, active: 1, reconciled: true });
+    expect(one).not.toHaveProperty('deleted');
     // KPIs cover the Active campaign only; ratings and SOP checks are still made for all four.
     expect(dash.summary.totals.active).toBe(1);
     expect(dash.campaigns).toHaveLength(4);
@@ -162,14 +169,19 @@ describe('sync (FAKE Meta world)', () => {
     expect(Object.fromEntries(dash.campaigns.map((c) => [c.metaCampaignId, c.delivery]))).toEqual({ c1: 'ACTIVE', c2: 'HAS_INACTIVE_AD_SETS', c3: 'NO_ACTIVE_ADS', c4: 'HAS_INACTIVE_ADS' });
   });
 
-  it('counts without deleted campaigns when Meta refuses to list them', async () => {
-    fake.uninstall();
-    fake = installFakeGraph((r) =>
-      r.path === 'act_1001/campaigns' && (r.params.get('effective_status') ?? '').includes('DELETED')
-        ? graphError(100, '(#100) Filtering field effective_status with operation in and value DELETED is not supported')
-        : world(r),
-    );
+  it('never sends DELETED to Meta, even if a status list or paging link contains it', async () => {
     const g = new GraphClient({ accessToken: 'x'.repeat(30), version: 'v26.0', maxRetries: 0 });
-    expect(await fetchCampaignStatusCounts(g, '1001', NOW)).toMatchObject({ total: 8, deletedIncluded: false, byEffectiveStatus: { ACTIVE: 4, PAUSED: 2, ARCHIVED: 1, WITH_ISSUES: 1 } });
+    // The fake answers exactly like Meta (100/1815001) whenever DELETED reaches a collection edge.
+    expect(await g.getAll('act_1001/campaigns', { fields: 'id,account_id,name,status,configured_status,effective_status', effective_status: ['ACTIVE', 'DELETED'] })).toHaveLength(4);
+    await g.get('act_1001/adsets', { filtering: [{ field: 'adset.effective_status', operator: 'IN', value: ['PAUSED', 'DELETED'] }, { field: 'campaign.id', operator: 'IN', value: ['c2'] }] });
+    for (const r of fake.requests) expect(r.url).not.toContain('DELETED');
+    const sent = JSON.parse(fake.requests.at(-1)!.params.get('filtering')!);
+    expect(sent).toEqual([{ field: 'adset.effective_status', operator: 'IN', value: ['PAUSED'] }, { field: 'campaign.id', operator: 'IN', value: ['c2'] }]);
   });
+
+  it('explains the deleted-objects error in plain words', () => {
+    const err = new MetaApiError(DELETED_REFUSED.body.error.message, 400, 100, 1815001);
+    expect(explainMetaError(err, { accountId: '153787105' })).toMatch(/^Meta does not return deleted campaigns, ad sets or ads.*\(Meta error 100\/1815001\)$/);
+  });
+
 });

@@ -67,6 +67,9 @@ export function explainMetaError(err: unknown, ctx: { accountId?: string } = {})
   if (err.code === 200 || err.code === 10 || (err.code !== undefined && err.code > 200 && err.code < 300)) {
     return `Meta refused access to${where || ' this data'}: ${m}. Check that the token has ads_read and that its person or system user is assigned to the ad account in Business Settings.${ref}`;
   }
+  if (err.subcode === 1815001 || /deleted objects is not supported/i.test(m)) {
+    return `Meta does not return deleted campaigns, ad sets or ads from this list, and the request asked for them. This tracker version no longer asks for deleted objects; if you still see this, the server is running an older version: redeploy it. Meta said: ${m}${ref}`;
+  }
   if (err.isRateLimit) return `Meta's rate limit was reached (the tracker waited and retried). Try again in 15–30 minutes. Meta said: ${m}${ref}`;
   if (err.code === 368) return `Meta has temporarily blocked this account from this action: ${m}${ref}`;
   if (err.status >= 500 || err.code === 1 || err.code === 2) return `Meta had a temporary problem; try again. Meta said: ${m}${ref}`;

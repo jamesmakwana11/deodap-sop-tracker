@@ -259,7 +259,7 @@ They are reported separately and listed under "What is off" when failed; they do
 
 A campaign is an **Active campaign** only when the campaign, **every** one of its ad sets and **every** one of its
 ads have Meta `effective_status` **ACTIVE** (and it has not ended or is not still scheduled). If even one ad set or
-ad is paused, off, archived, deleted, in review, in process, disapproved or otherwise not active, the whole campaign
+ad is paused, off, archived, in review, in process, disapproved or otherwise not active, the whole campaign
 is left out of the **Active campaigns** tile, the ratings and SOP tiles, the group tables and the default tracker
 view. The parent campaign status alone is never trusted. Each campaign ID is counted once.
 
@@ -267,11 +267,11 @@ Section *Campaign counts* on the dashboard shows, per ad account (e.g. DeoDap, D
 
 | Column | Meaning |
 |---|---|
-| Total campaigns | Every campaign in the ad account, all statuses, each campaign ID once (also the **Total campaigns** tile) |
+| Total campaigns | Every non-deleted campaign in the ad account (Active, Paused, Archived, Other), each campaign ID once (also the **Total campaigns** tile) |
 | Active campaigns | Strictly active as above (the **Active campaigns** tile) |
 | Campaign status Active (audited) | Every campaign whose own `effective_status` is ACTIVE; all are still audited for the SOP |
 | Not counted as Active | Why: some ad sets not active, some ads not active, no ad sets, no ads, ended, scheduled |
-| Paused / Archived / Deleted / Other | By Meta status (Other = in process, with issues) |
+| Paused / Archived / Other | By Meta status (Other = in process, with issues) |
 | Check | ✓ when Meta's count of ACTIVE campaigns equals the campaigns audited |
 
 The tracker's **Show** filter switches between *Active campaigns* (default) and *All with campaign status Active*;
@@ -280,14 +280,19 @@ never counted. Only the latest audit is counted; older audits stay in History. A
 "–" for Active until the next refresh.
 
 How it is read (all read-only): campaigns with status ACTIVE; for those campaigns only (filtered by campaign ID, 50 per
-request, all pages), their ad sets in every status and a light list of their non-active ads; plus one listing of all
-campaigns in every status for the totals. If Meta refuses the campaign filter, the tracker reads the account's ad sets
-and ads and filters them itself.
+request, all pages), their ad sets in every non-deleted status and a light list of their non-active ads; plus one
+listing of all non-deleted campaigns for the totals. If Meta refuses the campaign filter, the tracker reads the
+account's ad sets and ads and filters them itself.
 
-Real example, DeoDap ad account, 7 Nov 2026: 70 campaigns with Meta status Active; 45 delivering in Ads Manager;
-**33 strictly active** — 12 of the 45 delivering ones have a paused/archived ad set (8) or a paused, archived,
-in-review or in-process ad (4). This strict rule is stricter than Ads Manager's "Active" (delivering), so the
-tile is lower than Ads Manager on purpose.
+**Deleted objects are never requested.** Meta refuses `DELETED` in status filters on the campaigns, ad sets and ads
+lists (`(#100) Requesting for deleted objects is not supported in this endpoint`, error 100/1815001), so the tracker
+never asks for them, and its Meta client removes `DELETED` from any status filter as a safety net. Deleted campaigns
+are not current data and are not in any current total; audits made before they disappeared keep them in History.
+
+Real example, DeoDap ad account, 7 Nov 2026 15:40 IST: 903 campaigns (70 Active, 764 Paused, 69 Archived);
+**35 strictly active**. The other 35 with status Active have some ads not active (16), some ad sets not active (14),
+no ad sets (3) or have ended (2). This rule is stricter than Ads Manager's "Active" (delivering), so the tile can be
+lower than Ads Manager on purpose.
 
 ### Refresh reliability
 

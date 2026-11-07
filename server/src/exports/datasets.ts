@@ -143,12 +143,11 @@ async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<Exp
     [
       { key: 'name', header: 'Ad account', width: 20 },
       { key: 'id', header: 'Account ID', width: 16 },
-      { key: 'total', header: 'Total campaigns (all statuses)', type: 'number', width: 11 },
+      { key: 'total', header: 'Total campaigns (all statuses, excl. deleted)', type: 'number', width: 11 },
       { key: 'active', header: 'Active campaigns', type: 'number', width: 11 },
       { key: 'audited', header: 'Campaign status Active (audited)', type: 'number', width: 11 },
       { key: 'paused', header: 'Paused', type: 'number', width: 8 },
       { key: 'archived', header: 'Archived', type: 'number', width: 8 },
-      { key: 'deleted', header: 'Deleted', type: 'number', width: 8 },
       { key: 'other', header: 'Other', type: 'number', width: 8 },
       { key: 'check', header: 'Matches Meta', width: 10 },
     ],
@@ -160,11 +159,10 @@ async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<Exp
       audited: r.audited,
       paused: r.paused,
       archived: r.archived,
-      deleted: r.deletedIncluded === false ? null : r.deleted,
       other: r.other,
       check: r.reconciled === null ? null : r.reconciled ? 'Yes' : 'No',
     })),
-    'Counts are for the whole audit (filters not applied). Active = the campaign, all its ad sets and all its ads have Meta status Active (started, not ended). Total counts each campaign ID once, in every status.',
+    'Counts are for the whole audit (filters not applied). Active = the campaign, all its ad sets and all its ads have Meta status Active (started, not ended). Total counts each campaign ID once, in every status except deleted (Meta does not list deleted campaigns).',
   );
 }
 
