@@ -1,3 +1,4 @@
+import type { CampaignCountsSummary, DeliveryState } from './counts.js';
 import type { ManualCheckState, ManualEvent, ManualSummary } from './manual.js';
 
 /**
@@ -88,6 +89,8 @@ export interface CampaignAudit {
   whatIsOff: string[];
   /** Manual verification progress. Never counted as passes in the SOP %. */
   manual: ManualSummary;
+  /** Whether it is actually delivering (Ads Manager "Active"); null on audits from before this was recorded. */
+  delivery: DeliveryState | null;
 }
 
 export type RunSource = 'meta' | 'development';
@@ -153,6 +156,8 @@ export interface DashboardResponse {
   run: AuditRunInfo | null;
   campaigns: CampaignAudit[];
   summary: DashboardSummary;
+  /** Campaign counts per ad account and for all accounts, reconciled with Meta's statuses. */
+  counts: CampaignCountsSummary;
 }
 
 export interface AdSetDetail {

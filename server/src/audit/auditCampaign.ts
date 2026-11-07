@@ -1,3 +1,4 @@
+import { deliveryState } from '@sop/shared';
 import type { CampaignSnapshot, GeoLocation, RawAdSet } from '../meta/types.js';
 import type { AdAuditInput, AdSetAuditInput, CampaignAuditInput } from '../repositories/auditWriter.js';
 import { mapObjective } from './objective.js';
@@ -63,7 +64,7 @@ function toAdInputs(s: CampaignSnapshot): AdAuditInput[] {
  * Audits every campaign of a run. Ratings are computed together because Leads are ranked
  * against each other.
  */
-export function auditCampaigns(snapshots: CampaignSnapshot[], periodEnd: Date): CampaignAuditInput[] {
+export function auditCampaigns(snapshots: CampaignSnapshot[], periodEnd: Date, now = new Date()): CampaignAuditInput[] {
   const objectives = snapshots.map((s) => mapObjective(s.campaign.objective));
   const ratings: RatingOutcome[] = snapshots.map((s, i) => rateCampaign(s, objectives[i]!, periodEnd));
   rankLeads(ratings.filter((_, i) => objectives[i] === 'Leads'));
@@ -76,6 +77,8 @@ export function auditCampaigns(snapshots: CampaignSnapshot[], periodEnd: Date): 
       objectiveRaw: s.campaign.objective ?? 'UNKNOWN',
       objective: objectives[i]!,
       effectiveStatus: s.campaign.effective_status ?? null,
+      // Whether it is actually delivering (Ads Manager "Active"). Does not affect rating or SOP checks.
+      delivery: deliveryState(s.campaign, s.adSets, s.ads.filter((a) => (a.effective_status ?? 'ACTIVE') === 'ACTIVE'), now, s.adsKnown !== false),
       currency: s.account.currency,
       spend7d: spendOf(s.insights7d),
       mainMetric: r.metric,

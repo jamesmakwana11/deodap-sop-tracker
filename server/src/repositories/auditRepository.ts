@@ -112,6 +112,7 @@ export function toCampaignAudit({ record: r, account, manual: manualRows }: Camp
     checks: r.checks,
     compliance: computeCompliance(r.checks),
     whatIsOff: [...describeFindings(r.checks), ...manualFindings],
+    delivery: r.delivery ?? null,
     manual,
   };
 }

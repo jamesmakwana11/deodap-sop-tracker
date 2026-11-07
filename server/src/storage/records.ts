@@ -10,6 +10,8 @@ import type {
   RunSource,
   RunStatus,
   RunTotals,
+  DeliveryState,
+  MetaCampaignStatusCounts,
 } from '@sop/shared';
 
 /**
@@ -102,6 +104,8 @@ export interface RunAccountResult {
   error: string | null;
   /** What could not be read although the account succeeded (absent on older runs). */
   notes?: string[];
+  /** Campaigns per Meta status, all statuses, unique IDs (absent on older runs). */
+  campaignCounts?: MetaCampaignStatusCounts;
 }
 
 export interface AuditRunRecord {
@@ -165,6 +169,8 @@ export interface CampaignAuditRecord {
   objectiveRaw: string;
   objective: ObjectiveLabel;
   effectiveStatus: string | null;
+  /** Delivering or why not (absent on older audits). */
+  delivery?: DeliveryState | null;
   currency: string;
   spend7d: number;
   mainMetricKind: MetricKind | null;

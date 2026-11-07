@@ -5,6 +5,7 @@ import { CampaignTrackerTable } from '../components/dashboard/CampaignTrackerTab
 import { DevDataBanner } from '../components/dashboard/DevDataBanner';
 import { GroupSummaryTable } from '../components/dashboard/GroupSummaryTable';
 import { JudgingRules } from '../components/dashboard/JudgingRules';
+import { CampaignCounts } from '../components/dashboard/CampaignCounts';
 import { KpiGrid } from '../components/dashboard/KpiGrid';
 import { PageHeader } from '../components/dashboard/PageHeader';
 import { RuleFailureTable } from '../components/dashboard/RuleFailureTable';
@@ -89,10 +90,16 @@ export function DashboardPage() {
 
       {data?.run && (
         <>
-          <KpiGrid totals={data.summary.totals} />
+          <KpiGrid totals={data.summary.totals} counts={data.counts} />
           <p className="mt-4 rounded-full border border-line bg-head/60 px-4 py-1.5 text-[14px] text-ink">
             The SOP has three levels only: Good, Average and Bad. It has no “Best” level, so none is shown.
           </p>
+
+          {data.counts && data.run.source === 'meta' && (
+            <Section title="Campaign counts" intro="Per ad account and for all accounts, matching Meta Ads Manager. Ratings and SOP results below cover every campaign with Meta status Active.">
+              <CampaignCounts counts={data.counts} />
+            </Section>
+          )}
 
           <Section title="Where the account stands">
             <div className="grid gap-4 xl:grid-cols-2">

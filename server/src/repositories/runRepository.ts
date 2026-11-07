@@ -21,7 +21,7 @@ function toItem(r: AuditRunRecord): RunListItem {
     accounts: r.accounts
       .map((a) => {
         const acc = store.c.adAccounts.get(a.adAccountId);
-        return { name: acc?.name ?? 'Removed account', metaAccountId: acc?.metaAccountId ?? '', status: a.status, error: a.error, notes: a.notes ?? [] };
+        return { name: acc?.name ?? 'Removed account', metaAccountId: acc?.metaAccountId ?? '', status: a.status, error: a.error, notes: a.notes ?? [], campaignCounts: a.campaignCounts ?? null };
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
     totals: r.totals ?? EMPTY_TOTALS,

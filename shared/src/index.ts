@@ -10,3 +10,4 @@ export * from './manual.js';
 export * from './filters.js';
 export * from './format.js';
 export * from './exports.js';
+export * from './counts.js';

@@ -15,6 +15,7 @@ import {
   type MetaStatusResponse,
   type RunListItem,
   type UserSummary,
+  buildCampaignCounts,
 } from '@sop/shared';
 import snapshot from './snapshot.json';
 
@@ -81,7 +82,8 @@ async function handle(method: string, path: string, body: Record<string, unknown
   if (p === '/dashboard') {
     const runId = url.searchParams.get('runId');
     if (runId && runId !== data.dashboard.run?.id) return error(404, 'That audit run does not exist or did not complete.');
-    return json({ ...data.dashboard, campaigns: data.dashboard.campaigns.map(withManual) });
+    const campaigns = data.dashboard.campaigns.map(withManual).map((c) => ({ ...c, delivery: c.delivery ?? null }));
+    return json({ ...data.dashboard, campaigns, counts: data.dashboard.counts ?? buildCampaignCounts([], campaigns, null) });
   }
   if ((m = p.match(/^\/campaign-audits\/(\d+)$/))) {
     const d = data.details[m[1]!];

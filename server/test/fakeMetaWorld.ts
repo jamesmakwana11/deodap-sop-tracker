@@ -18,8 +18,31 @@ const goodTargeting = {
   excluded_geo_locations: { regions: sisters },
 };
 
+/** Every campaign of FAKE account 1001 in every status: 4 ACTIVE (audited), 2 PAUSED, 1 ARCHIVED, 1 DELETED, 1 WITH_ISSUES. */
+export const ALL_CAMPAIGNS_1001 = [
+  { id: 'c1', account_id: '1001', name: '101 | AA | Carousel | Sales | 01.10.2026', status: 'ACTIVE', configured_status: 'ACTIVE', effective_status: 'ACTIVE' },
+  { id: 'c2', account_id: '1001', name: 'Awareness push', status: 'ACTIVE', configured_status: 'ACTIVE', effective_status: 'ACTIVE' },
+  { id: 'c3', account_id: '1001', name: 'Leads | Static | 01.09.2026', status: 'ACTIVE', configured_status: 'ACTIVE', effective_status: 'ACTIVE' },
+  { id: 'c4', account_id: '1001', name: '104 | Video | Sales | 02.11.2026', status: 'ACTIVE', configured_status: 'ACTIVE', effective_status: 'ACTIVE' },
+  { id: 'p1', account_id: '1001', name: 'Paused one', status: 'PAUSED', configured_status: 'PAUSED', effective_status: 'PAUSED' },
+  { id: 'p2', account_id: '1001', name: 'Paused two', status: 'PAUSED', configured_status: 'PAUSED', effective_status: 'PAUSED' },
+  { id: 'a1', account_id: '1001', name: 'Old archived', status: 'ARCHIVED', configured_status: 'ARCHIVED', effective_status: 'ARCHIVED' },
+  { id: 'd1', account_id: '1001', name: 'Deleted one', status: 'DELETED', configured_status: 'DELETED', effective_status: 'DELETED' },
+  { id: 'w1', account_id: '1001', name: 'Has issues', status: 'ACTIVE', configured_status: 'ACTIVE', effective_status: 'WITH_ISSUES' },
+];
+
 export const world: GraphHandler = (r) => {
   if (r.path === 'act_1002/campaigns') return graphError(200, 'Permissions error: ads_read not granted for this account', 403);
+  if (r.path === 'act_1001/campaigns' && (r.params.get('fields') ?? '').includes('configured_status')) {
+    // Status listing for the counts: Meta filters by the statuses asked for and pages the result.
+    const wanted: string[] = JSON.parse(r.params.get('effective_status')!);
+    const rows = ALL_CAMPAIGNS_1001.filter((c) => wanted.includes(c.effective_status));
+    const after = Number(r.params.get('after') ?? 0);
+    const page = after === 0 ? rows.slice(0, 5) : rows.slice(4); // second page repeats one row, as Meta's cursors can
+    const next = after === 0 ? new URL(r.url) : null;
+    next?.searchParams.set('after', '5');
+    return { body: { data: page, paging: next ? { next: next.toString() } : {} } };
+  }
   if (r.path === 'act_1001/campaigns') {
     expect(JSON.parse(r.params.get('effective_status')!)).toEqual(['ACTIVE']);
     return {

@@ -1,5 +1,6 @@
 import {
   BID_STRATEGY_LABEL,
+  buildCampaignCounts,
   buildDashboardSummary,
   CHECK_OUTCOME_LABEL,
   computeRuleFailures,
@@ -132,10 +133,46 @@ function ruleFailureTable(campaigns: CampaignAudit[]): ExportTable {
   );
 }
 
+/** Campaign counts per ad account and All accounts for a run (all statuses, unique IDs). */
+async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<ExportTable> {
+  const accounts = (await listRuns(200)).find((r) => r.id === run.id)?.accounts ?? [];
+  const c = buildCampaignCounts(accounts, all, null);
+  const rows = [...c.accounts, ...(c.accounts.length > 1 ? [c.all] : [])];
+  return table(
+    'Campaign counts',
+    [
+      { key: 'name', header: 'Ad account', width: 20 },
+      { key: 'id', header: 'Account ID', width: 16 },
+      { key: 'total', header: 'Total campaigns (all statuses)', type: 'number', width: 11 },
+      { key: 'delivering', header: 'Active in Ads Manager (delivering)', type: 'number', width: 11 },
+      { key: 'audited', header: 'Meta status Active (audited)', type: 'number', width: 11 },
+      { key: 'paused', header: 'Paused', type: 'number', width: 8 },
+      { key: 'archived', header: 'Archived', type: 'number', width: 8 },
+      { key: 'deleted', header: 'Deleted', type: 'number', width: 8 },
+      { key: 'other', header: 'Other', type: 'number', width: 8 },
+      { key: 'check', header: 'Matches Meta', width: 10 },
+    ],
+    rows.map((r) => ({
+      name: r.name,
+      id: r.metaAccountId === 'all' ? null : r.metaAccountId,
+      total: r.total,
+      delivering: c.deliveryKnown ? r.delivering : null,
+      audited: r.audited,
+      paused: r.paused,
+      archived: r.archived,
+      deleted: r.deletedIncluded === false ? null : r.deleted,
+      other: r.other,
+      check: r.reconciled === null ? null : r.reconciled ? 'Yes' : 'No',
+    })),
+    'Counts are for the whole audit (filters not applied). Delivering = Meta status Active with an active ad in an active ad set that has not ended. Total counts each campaign ID once, in every status.',
+  );
+}
+
 function totalsFacts(campaigns: CampaignAudit[]): ExportTable {
   const t = buildDashboardSummary(campaigns).totals;
   return facts('Totals', [
-    ['Active campaigns', t.active],
+    ['Campaigns with Meta status Active (audited)', t.active],
+    ['Delivering (Active in Ads Manager)', campaigns.every((c) => c.delivery !== null) ? campaigns.filter((c) => c.delivery === 'DELIVERING').length : null],
     ['Good', t.good],
     ['Average', t.average],
     ['Bad', t.bad],
@@ -259,6 +296,7 @@ const builders: Record<ExportDatasetId, Builder> = {
       runId: ctx.run.id,
       sections: [
         totalsFacts(ctx.campaigns),
+        await countsTable(ctx.run, ctx.all),
         groupTable('By ad account', 'Ad account', s.byAccount),
         groupTable('By objective', 'Objective', s.byObjective),
         ruleFailureTable(ctx.campaigns),
@@ -639,7 +677,7 @@ const builders: Record<ExportDatasetId, Builder> = {
     const perGroup = s.byAccount.map((g) =>
       performanceTable(`${g.label}`, ctx.campaigns.filter((c) => c.account.id === g.key), false),
     );
-    return { meta, devData, runId: ctx.run.id, sections: [summary, ...perGroup], primary: summary };
+    return { meta, devData, runId: ctx.run.id, sections: [summary, await countsTable(ctx.run, ctx.all), ...perGroup], primary: summary };
   },
 
   async objectives(p, user) {

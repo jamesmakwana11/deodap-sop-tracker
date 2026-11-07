@@ -81,6 +81,7 @@ export interface RawAdSet {
   frequency_control_specs?: FrequencyControlSpec[];
   targeting?: RawTargeting;
   start_time?: string;
+  end_time?: string;
 }
 
 interface CallToAction {
@@ -151,4 +152,6 @@ export interface CampaignSnapshot {
   insightsFirst14d: RawInsight | null;
   /** Why insights could not be read for the account (then performance is Not rated, not "no spend"). */
   insightsUnavailable?: string | null;
+  /** False when Meta refused the ads, so delivery is unknown. */
+  adsKnown?: boolean;
 }

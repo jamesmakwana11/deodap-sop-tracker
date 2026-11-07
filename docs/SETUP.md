@@ -255,6 +255,30 @@ They are reported separately and listed under "What is off" when failed; they do
 
 ---
 
+### Campaign counts (why the dashboard and Ads Manager can differ)
+
+Meta gives every campaign an `effective_status`. **ACTIVE** only means the campaign itself is switched on. Ads
+Manager's **Active** means it is actually *delivering*: switched on, with at least one active ad in an active ad set
+that has not ended. A campaign can be ACTIVE in Meta but show in Ads Manager as *Ad sets inactive*, *Ads inactive*,
+*Completed* or *Scheduled*.
+
+The dashboard shows both, per ad account and for **All accounts** (section *Campaign counts*):
+
+| Column | Meaning |
+|---|---|
+| Total campaigns | Every campaign in the ad account, all statuses, each campaign ID once |
+| Active in Ads Manager | Delivering (matches Ads Manager's Active) — this is the **Active campaigns** tile |
+| Meta status Active (audited) | Every campaign with `effective_status` ACTIVE; all are audited for ratings and the SOP, as before |
+| Status Active, not delivering | Why not: no active ads, no active ad sets, ended, scheduled |
+| Paused / Archived / Deleted / Other | By Meta status (Other = in process, with issues) |
+| Check | ✓ when Meta's count of ACTIVE campaigns equals the campaigns audited |
+
+The counts come from one extra read-only request per account (`act_<id>/campaigns` with
+`id,account_id,name,status,configured_status,effective_status` over all statuses, all pages); delivery uses the ad
+sets and ads the refresh already reads. Audits made before this version show "–" until the next refresh. Example
+from the DeoDap ad account on 7 Nov 2026: 70 campaigns with Meta status Active, of which 45 delivering (17 without
+active ads, 6 without active ad sets, 2 ended) — Ads Manager showed 45.
+
 ## 7. Reports and exports
 
 Every screen that shows data has an **Export** button. Pick the report, the format — **PDF, Excel (.xlsx),

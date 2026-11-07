@@ -1,7 +1,8 @@
+import type { MetaCampaignStatusCounts } from '@sop/shared';
 import type { AdAccountInfo } from '@sop/shared';
 import { auditCampaigns } from '../audit/auditCampaign.js';
 import { badRequest, conflict } from '../http/errors.js';
-import { fetchAccountSnapshots } from '../meta/fetchAccount.js';
+import { fetchAccountSnapshots, fetchCampaignStatusCounts } from '../meta/fetchAccount.js';
 import { explainMetaError } from '../meta/permissions.js';
 import { MetaApiError } from '../meta/graphClient.js';
 import type { CampaignSnapshot } from '../meta/types.js';
@@ -65,7 +66,7 @@ function describeError(err: unknown, metaAccountId: string): string {
 }
 
 async function executeRun(runId: string, accounts: AdAccountInfo[], now: Date): Promise<void> {
-  const fetched: { account: AdAccountInfo; snapshots: CampaignSnapshot[]; notes: string[] }[] = [];
+  const fetched: { account: AdAccountInfo; snapshots: CampaignSnapshot[]; notes: string[]; counts: MetaCampaignStatusCounts | null }[] = [];
   const failed: { account: AdAccountInfo; error: string }[] = [];
 
   for (const account of accounts) {
@@ -78,7 +79,20 @@ async function executeRun(runId: string, accounts: AdAccountInfo[], now: Date): 
         now,
         notes,
       );
-      fetched.push({ account, snapshots, notes });
+      // Campaigns in every status, for counts that match Ads Manager. Never fails the account.
+      let counts: MetaCampaignStatusCounts | null = null;
+      try {
+        counts = await fetchCampaignStatusCounts(graph, account.metaAccountId, now);
+        if (!counts.deletedIncluded) notes.push('Meta did not list deleted campaigns, so Total campaigns excludes them.');
+        const activeListed = counts.byEffectiveStatus.ACTIVE ?? 0;
+        if (activeListed !== snapshots.length) {
+          notes.push(`Meta listed ${activeListed} campaigns with status Active in the count but ${snapshots.length} in the audit read; a campaign probably changed status during the refresh.`);
+        }
+      } catch (err) {
+        if (err instanceof MetaApiError && err.isTokenInvalid) throw err;
+        notes.push(`Campaign totals by status could not be read: ${describeError(err, account.metaAccountId)}`);
+      }
+      fetched.push({ account, snapshots, notes, counts });
     } catch (err) {
       if (err instanceof MetaApiError && err.isTokenInvalid) {
         await markConnectionInvalid(account.connectionId!, err.message);
@@ -89,10 +103,10 @@ async function executeRun(runId: string, accounts: AdAccountInfo[], now: Date): 
 
   // Audit all accounts together so Leads campaigns are ranked across the whole run.
   const all = fetched.flatMap((f) => f.snapshots.map((s) => ({ account: f.account, s })));
-  const audits = auditCampaigns(all.map((x) => x.s), new Date(`${istDate(now, -1)}T23:59:59+05:30`));
+  const audits = auditCampaigns(all.map((x) => x.s), new Date(`${istDate(now, -1)}T23:59:59+05:30`), now);
 
   await insertCampaignAudits(runId, all.map((x, i) => ({ accountId: x.account.id, audit: audits[i]! })));
-  for (const f of fetched) await recordRunAccount(runId, f.account.id, 'succeeded', null, f.notes);
+  for (const f of fetched) await recordRunAccount(runId, f.account.id, 'succeeded', null, f.notes, f.counts);
   for (const f of failed) await recordRunAccount(runId, f.account.id, 'failed', f.error);
   const status = failed.length === 0 ? 'succeeded' : fetched.length === 0 ? 'failed' : 'partial';
   const error = failed.length ? failed.map((f) => `${f.account.name}: ${f.error}`).join(' | ').slice(0, 1000) : null;

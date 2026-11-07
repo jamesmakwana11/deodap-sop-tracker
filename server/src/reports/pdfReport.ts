@@ -102,7 +102,7 @@ export function buildPdfReport(data: ReportData): Promise<Buffer> {
   // ── KPI tiles ──
   const t = data.summary.totals;
   const tiles: [number, string, string][] = [
-    [t.active, 'Active campaigns', C.navy],
+    [t.active, 'Meta status Active', C.navy],
     [t.good, 'Rated Good', C.good],
     [t.average, 'Rated Average', C.avg],
     [t.bad, 'Rated Bad', C.bad],

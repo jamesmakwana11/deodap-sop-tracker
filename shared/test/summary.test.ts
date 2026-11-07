@@ -24,6 +24,7 @@ function campaign(
     ratingIndicative: false,
     ratingNote: null,
     manual: { verified: 0, failed: 0, notApplicable: 0, pending: 7 },
+    delivery: null,
     checks,
     compliance: computeCompliance(checks),
     whatIsOff: describeFindings(checks),

@@ -1,3 +1,4 @@
+import type { DeliveryState, MetaCampaignStatusCounts } from '@sop/shared';
 import {
   computeCompliance,
   type CheckResult,
@@ -72,11 +73,12 @@ export async function recordRunAccount(
   status: 'succeeded' | 'failed',
   error: string | null = null,
   notes: string[] = [],
+  campaignCounts: MetaCampaignStatusCounts | null = null,
 ): Promise<void> {
   const run = store.c.auditRuns.get(runId);
   if (!run) return;
   const accounts = run.accounts.filter((a) => a.adAccountId !== accountId);
-  accounts.push({ adAccountId: accountId, status, error, ...(notes.length ? { notes } : {}) });
+  accounts.push({ adAccountId: accountId, status, error, ...(notes.length ? { notes } : {}), ...(campaignCounts ? { campaignCounts } : {}) });
   await store.c.auditRuns.update(runId, { accounts });
 }
 
@@ -108,6 +110,7 @@ export interface CampaignAuditInput {
   objectiveRaw: string;
   objective: ObjectiveLabel;
   effectiveStatus: string | null;
+  delivery?: DeliveryState | null;
   currency: string;
   spend7d: number;
   mainMetric: { kind: MetricKind; value: number | null } | null;
@@ -177,6 +180,7 @@ export async function insertCampaignAudits(runId: string, items: { accountId: st
       objectiveRaw: c.objectiveRaw,
       objective: c.objective,
       effectiveStatus: c.effectiveStatus,
+      delivery: c.delivery ?? null,
       currency: c.currency,
       spend7d: c.spend7d,
       mainMetricKind: c.mainMetric?.kind ?? null,

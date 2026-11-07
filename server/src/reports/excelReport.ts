@@ -86,7 +86,7 @@ export async function buildExcelReport(data: ReportData): Promise<Buffer> {
 
   const t = data.summary.totals;
   addTable(s, ['Measure', 'Campaigns'], [
-    ['Active campaigns', t.active],
+    ['Campaigns with Meta status Active (audited)', t.active],
     ['Rated Good', t.good],
     ['Rated Average', t.average],
     ['Rated Bad', t.bad],

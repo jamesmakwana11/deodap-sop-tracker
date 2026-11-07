@@ -1,5 +1,6 @@
 import { MetaApiError, type GraphClient } from './graphClient.js';
 import { explainMetaError, isFieldPermissionError } from './permissions.js';
+import type { MetaCampaignStatusCounts } from '@sop/shared';
 import type { CampaignSnapshot, RawAd, RawAdSet, RawCampaign, RawInsight } from './types.js';
 
 /**
@@ -20,6 +21,7 @@ const CAMPAIGN_FIELDS = [
 const ADSET_FIELDS = [
   'id', 'name', 'campaign_id', 'effective_status', 'daily_budget', 'lifetime_budget', 'bid_strategy',
   'optimization_goal', 'billing_event', 'is_dynamic_creative', 'frequency_control_specs', 'targeting', 'start_time',
+  'end_time',
 ].join(',');
 
 const CREATIVE_FIELDS = [
@@ -33,6 +35,47 @@ const AD_FIELDS_BASIC = 'id,name,adset_id,campaign_id,effective_status,creative{
 const AD_FIELDS_MINIMAL = 'id,name,adset_id,campaign_id,effective_status';
 const INSIGHT_FIELDS = 'campaign_id,spend,reach,impressions,actions,action_values';
 const ACTIVE = ['ACTIVE'];
+
+/** Every status a campaign can have in Meta (the values Meta accepts for campaign effective_status). */
+const ALL_CAMPAIGN_STATUSES = ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'];
+const STATUS_FIELDS = 'id,account_id,name,status,configured_status,effective_status';
+
+/** Meta's cursor paging can repeat a row when data changes mid-read; keep each ID once. */
+const uniqueById = <T extends { id: string }>(rows: T[]): T[] => {
+  const seen = new Set<string>();
+  return rows.filter((r) => !seen.has(r.id) && seen.add(r.id));
+};
+
+/**
+ * Lists the account's campaigns in every status (one light request, all pages) and counts them
+ * by Meta effective_status, one per unique campaign ID. If Meta refuses to list deleted
+ * campaigns, the count is made without them and says so.
+ */
+export async function fetchCampaignStatusCounts(graph: GraphClient, metaAccountId: string, now = new Date()): Promise<MetaCampaignStatusCounts> {
+  const act = `act_${metaAccountId}`;
+  const list = (statuses: string[]) =>
+    graph.getAll<{ id: string; account_id?: string; effective_status?: string; status?: string }>(`${act}/campaigns`, {
+      fields: STATUS_FIELDS,
+      effective_status: statuses,
+      limit: 500,
+    });
+  let deletedIncluded = true;
+  let rows;
+  try {
+    rows = await list(ALL_CAMPAIGN_STATUSES);
+  } catch (err) {
+    if (!(err instanceof MetaApiError) || err.isTokenInvalid || err.isTransient) throw err;
+    deletedIncluded = false;
+    rows = await list(ALL_CAMPAIGN_STATUSES.filter((s) => s !== 'DELETED'));
+  }
+  const byEffectiveStatus: Record<string, number> = {};
+  const unique = uniqueById(rows).filter((r) => !r.account_id || r.account_id === metaAccountId);
+  for (const r of unique) {
+    const s = r.effective_status ?? r.status ?? 'UNKNOWN';
+    byEffectiveStatus[s] = (byEffectiveStatus[s] ?? 0) + 1;
+  }
+  return { total: unique.length, byEffectiveStatus, deletedIncluded, countedAt: now.toISOString() };
+}
 const DAY = 86_400_000;
 
 export interface AccountRef {
@@ -74,15 +117,18 @@ async function fetchAds(graph: GraphClient, act: string, notes: string[]): Promi
  */
 export async function fetchAccountSnapshots(graph: GraphClient, account: AccountRef, now = new Date(), notes: string[] = []): Promise<CampaignSnapshot[]> {
   const act = `act_${account.metaAccountId}`;
-  const campaigns = await graph.getAll<RawCampaign>(`${act}/campaigns`, {
-    fields: CAMPAIGN_FIELDS,
-    effective_status: ACTIVE,
-    limit: 200,
-  });
+  const campaigns = uniqueById(
+    await graph.getAll<RawCampaign>(`${act}/campaigns`, {
+      fields: CAMPAIGN_FIELDS,
+      effective_status: ACTIVE,
+      limit: 200,
+    }),
+  );
   if (campaigns.length === 0) return [];
 
   let insightsUnavailable: string | null = null;
-  const [adSets, ads, insights] = await Promise.all([
+  const adsNotesBefore = notes.length;
+  const [adSetsRaw, adsRaw, insights] = await Promise.all([
     graph.getAll<RawAdSet>(`${act}/adsets`, { fields: ADSET_FIELDS, effective_status: ACTIVE, limit: 200 }),
     fetchAds(graph, act, notes),
     // Account-level insights return one row per campaign that delivered; no row means no spend.
@@ -94,6 +140,10 @@ export async function fetchAccountSnapshots(graph: GraphClient, account: Account
     }),
   ]);
 
+  const adSets = uniqueById(adSetsRaw);
+  const ads = uniqueById(adsRaw);
+  // Ads were refused entirely (not just reduced fields): delivery cannot be worked out.
+  const adsKnown = !notes.slice(adsNotesBefore).some((n) => n.startsWith('Ads were not readable'));
   const insightByCampaign = new Map(insights.map((i) => [i.campaign_id, i]));
   const snapshots: CampaignSnapshot[] = [];
 
@@ -121,6 +171,7 @@ export async function fetchAccountSnapshots(graph: GraphClient, account: Account
       insights7d: insightByCampaign.get(campaign.id) ?? null,
       insightsFirst14d,
       insightsUnavailable,
+      adsKnown,
     });
   }
   return snapshots;

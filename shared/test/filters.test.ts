@@ -15,6 +15,7 @@ function c(id: string, rating: Rating, spend: number, fails: number, account = '
     objective: 'Sales', objectiveRaw: 'OUTCOME_SALES', spend7d: spend, currency: 'INR', mainMetric: null, rating,
     ratingIndicative: false, ratingNote: null, checks, compliance: computeCompliance(checks), whatIsOff: [],
     manual: { verified: 0, failed: 0, notApplicable: 0, pending: 7 },
+    delivery: null,
   };
 }
 

@@ -1,3 +1,4 @@
+import type { MetaCampaignStatusCounts } from './counts.js';
 import type { RunSource, RunStatus } from './types.js';
 
 export interface RunAccountResult {
@@ -7,6 +8,8 @@ export interface RunAccountResult {
   error: string | null;
   /** What Meta did not allow reading although the account was audited (e.g. insights). */
   notes: string[];
+  /** Campaigns per Meta status for the account (all statuses); absent on older audits. */
+  campaignCounts?: MetaCampaignStatusCounts | null;
 }
 
 export interface RunTotals {
