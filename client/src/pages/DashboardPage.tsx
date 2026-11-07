@@ -6,6 +6,7 @@ import { DevDataBanner } from '../components/dashboard/DevDataBanner';
 import { GroupSummaryTable } from '../components/dashboard/GroupSummaryTable';
 import { JudgingRules } from '../components/dashboard/JudgingRules';
 import { CampaignCounts } from '../components/dashboard/CampaignCounts';
+import { CountReconciliation } from '../components/dashboard/CountReconciliation';
 import { KpiGrid } from '../components/dashboard/KpiGrid';
 import { PageHeader } from '../components/dashboard/PageHeader';
 import { RuleFailureTable } from '../components/dashboard/RuleFailureTable';
@@ -99,6 +100,11 @@ export function DashboardPage() {
           {data.counts && data.run.source === 'meta' && (
             <Section title="Campaign counts" intro="Per ad account and for all accounts. Active campaigns, ratings and SOP results below count only campaigns whose ad sets and ads are all Active; the tracker can show the rest with “Show”.">
               <CampaignCounts counts={data.counts} />
+            </Section>
+          )}
+          {data.counts && data.run.source === 'meta' && (
+            <Section title="Count reconciliation with Ads Manager" intro="What Meta's API returned for each ad account and how every count above is made from it.">
+              <CountReconciliation counts={data.counts} />
             </Section>
           )}
 

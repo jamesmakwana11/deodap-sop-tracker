@@ -15,7 +15,7 @@ function excludedText(r: AccountCampaignCounts): string {
  */
 export function CampaignCounts({ counts }: { counts: CampaignCountsSummary }) {
   const rows = [...counts.accounts, ...(counts.accounts.length > 1 ? [counts.all] : [])];
-  const head = ['Ad account', 'Total campaigns', 'Active campaigns', 'Campaign status Active (audited)', 'Not counted as Active', 'Paused', 'Archived', 'Other', 'Check'];
+  const head = ['Ad account', 'Total (not archived)', 'Active campaigns', 'Delivering (Active in Ads Manager)', 'Campaign status Active (audited)', 'Not counted as Active', 'Paused', 'Archived', 'Other', 'Check'];
   const anyMissing = counts.accounts.some((r) => r.total === null);
 
   return (
@@ -25,7 +25,7 @@ export function CampaignCounts({ counts }: { counts: CampaignCountsSummary }) {
           <thead>
             <tr className="bg-head text-navy">
               {head.map((h, i) => (
-                <th key={h} className={`px-2.5 py-2 font-semibold ${i === 0 || i === 4 || i === 8 ? 'text-left' : 'text-right'}`}>
+                <th key={h} className={`px-2.5 py-2 font-semibold ${i === 0 || i === 5 || i === 9 ? 'text-left' : 'text-right'}`}>
                   {h}
                 </th>
               ))}
@@ -40,8 +40,9 @@ export function CampaignCounts({ counts }: { counts: CampaignCountsSummary }) {
                     {r.name}
                     {!all && <span className="block text-[12px] font-normal text-muted">{r.metaAccountId}</span>}
                   </td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{n(r.total)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{n(r.notArchived)}</td>
                   <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-good">{counts.activeKnown ? n(r.active) : '–'}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{n(r.delivering)}</td>
                   <td className="px-2.5 py-2 text-right tabular-nums">{n(r.audited)}</td>
                   <td className="px-2.5 py-2 text-[13px] text-muted">{counts.activeKnown ? excludedText(r) : 'Refresh now to check'}</td>
                   <td className="px-2.5 py-2 text-right tabular-nums">{n(r.paused)}</td>
@@ -72,8 +73,10 @@ export function CampaignCounts({ counts }: { counts: CampaignCountsSummary }) {
           Active (effective_status). A campaign with even one paused, off, archived, in-review or in-process ad set or ad is not
           counted, nor is one that has ended or not started. <b className="text-ink">Campaign status Active</b> = every campaign whose own
           status is Active; all are audited for the SOP and can be shown with “Show: All with campaign status Active”.{' '}
-          <b className="text-ink">Total</b> = every campaign in the ad account, counted once per campaign ID, in all statuses (Active,
-          Paused, Archived, Other = in process or with issues). Deleted campaigns, ad sets and ads are not current data: Meta does not
+          <b className="text-ink">Delivering</b> = Ads Manager's “Active” (Meta delivery status active): at least one active ad in an
+          active ad set that has started and not ended, even if other ad sets or ads are off.{' '}
+          <b className="text-ink">Total (not archived)</b> = what Ads Manager lists by default: every campaign counted once per campaign
+          ID, Active, Paused and Other (in process or with issues), without Archived, which is shown separately. Deleted campaigns, ad sets and ads are not current data: Meta does not
           list them and they are not counted; earlier audits keep them in History. Unpublished drafts are not campaigns yet and are not
           counted.
         </p>

@@ -19,7 +19,7 @@ import { graphWaits } from './setup.js';
 
 interface Row { id: string; effective_status: string; campaign_id?: string; adset_id?: string; start_time?: string; stop_time?: string; end_time?: string }
 const live = JSON.parse(readFileSync(new URL('./fixtures/deodapLive.json', import.meta.url), 'utf8')) as {
-  recordedAt: string; accountId: string; campaigns: Row[]; adsets: Row[]; ads: Row[]; otherCampaigns: Row[];
+  recordedAt: string; accountId: string; campaigns: Row[]; adsets: Row[]; ads: Row[]; otherCampaigns: Row[]; metaDelivery: [string, string][];
 };
 // Names were left out of the recording; Meta always returns one, so the stand-in adds a placeholder.
 const named = (rows: Row[], kind: string) => rows.map((r) => ({ ...r, name: `${kind} ${r.id}` }));
@@ -28,6 +28,13 @@ live.otherCampaigns = named(live.otherCampaigns, 'Campaign');
 live.adsets = named(live.adsets, 'Ad set');
 live.ads = named(live.ads, 'Ad');
 const NOW = new Date(live.recordedAt);
+/**
+ * Meta's own `delivery` status for each of the 70 campaigns (Ads Manager's Delivery column), read
+ * the same afternoon, mapped to the tracker's names: active → DELIVERING; single_all_ad_off,
+ * multi_all_ads_off, no_active_ad_set → ALL_ADS_OFF; no_ads → NO_ADS; *_all_ad_sets_off →
+ * ALL_AD_SETS_OFF; all_ad_sets_completed → ENDED.
+ */
+const META_DELIVERY = live.metaDelivery;
 const ACT = `act_${live.accountId}`;
 const TOKEN = 'DEODAP-STORED-TOKEN-0123456789';
 
@@ -126,6 +133,18 @@ describe('complete sync on real DeoDap Meta responses (7 Nov 2026 15:40 IST)', (
       reconciled: true,
     });
     expect(row.excluded).toMatchObject({ HAS_INACTIVE_ADS: 16, HAS_INACTIVE_AD_SETS: 14, NO_ACTIVE_AD_SETS: 3, ENDED: 2, NO_ACTIVE_ADS: 0, SCHEDULED: 0, UNKNOWN: 0 });
+    // Reconciliation with Ads Manager. Raw listing: every page read, one row per campaign ID, all
+    // from this ad account, and `status` equal to `effective_status` for every campaign.
+    expect(row.raw).toEqual({ rows: 903, pages: 10, uniqueIds: 903, duplicateRows: 0, otherAccountRows: 0, byStatus: { ACTIVE: 70, PAUSED: 764, ARCHIVED: 69 }, statusDiffers: 0 });
+    // Ads Manager hides archived campaigns: 903 - 69 = 834 listed there.
+    expect(row.notArchived).toBe(834);
+    // Ads Manager "Active" = delivering. Meta's own delivery status (read the same day) is "active" for
+    // 45 of the 70; the other 25 are inactive / completed for exactly these reasons.
+    expect(row.delivering).toBe(45);
+    expect(row.notDelivering).toEqual({ ALL_ADS_OFF: 15, NO_ADS: 6, ALL_AD_SETS_OFF: 3, ENDED: 1, SCHEDULED: 0, UNKNOWN: 0 });
+    // Per campaign, the tracker's reading equals Meta's delivery status for all 70.
+    const metaSays = new Map(META_DELIVERY.map(([id, d]) => [id, d]));
+    for (const c of dash.campaigns) expect([c.metaCampaignId, c.metaDelivery]).toEqual([c.metaCampaignId, metaSays.get(c.metaCampaignId)]);
     expect(dash.counts.activeKnown).toBe(true);
     expect(dash.summary.totals.active).toBe(35);
     // SOP checks still run for every campaign with status Active.

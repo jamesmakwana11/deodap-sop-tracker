@@ -11,6 +11,7 @@ import type {
   RunStatus,
   RunTotals,
   DeliveryState,
+  MetaDelivery,
   MetaCampaignStatusCounts,
 } from '@sop/shared';
 
@@ -173,6 +174,8 @@ export interface CampaignAuditRecord {
   effectiveStatus: string | null;
   /** Delivering or why not (absent on older audits). */
   delivery?: DeliveryState | null;
+  /** Meta delivery status (Ads Manager "Active" = DELIVERING); absent on older audits. */
+  metaDelivery?: MetaDelivery | null;
   currency: string;
   spend7d: number;
   mainMetricKind: MetricKind | null;

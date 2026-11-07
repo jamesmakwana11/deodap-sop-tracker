@@ -1,7 +1,8 @@
 /** Strict Active campaigns (campaign, all ad sets and all ads Active), all-status totals, per account and All accounts. */
-import { buildCampaignCounts, deliveryState, type DashboardResponse, type DeliveryState } from '@sop/shared';
+import { buildCampaignCounts, deliveryState, metaDelivery, type DashboardResponse, type DeliveryState } from '@sop/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { fetchCampaignStatusCounts } from '../src/meta/fetchAccount.js';
 import { explainMetaError } from '../src/meta/permissions.js';
 import { GraphClient, MetaApiError } from '../src/meta/graphClient.js';
 import { startSync } from '../src/services/syncService.js';
@@ -110,6 +111,54 @@ describe('strict rule, every combination', () => {
     const older = buildCampaignCounts([{ metaAccountId: '1', name: 'DeoDap', status: 'succeeded' }], [{ metaCampaignId: 'x', account: { metaAccountId: '1' }, delivery: 'DELIVERING' }], null);
     expect(older.activeKnown).toBe(false);
     expect(older.all).toMatchObject({ total: null, active: 0, reconciled: null });
+  });
+});
+
+describe('Ads Manager "Active" (Meta delivery status), every combination', () => {
+  const now = new Date('2026-11-07T08:00:00Z');
+  const set = (id: string, effective_status = 'ACTIVE', extra = {}) => ({ id, effective_status, ...extra });
+  const ad = (adset_id: string, effective_status = 'ACTIVE') => ({ adset_id, effective_status });
+  it.each([
+    ['all active', {}, [set('s')], [ad('s')], 'DELIVERING'],
+    ['one active ad among paused ones: delivering, though not strictly Active', {}, [set('s'), set('t', 'PAUSED')], [ad('s'), ad('s', 'PAUSED'), ad('t', 'ADSET_PAUSED')], 'DELIVERING'],
+    ['no ad sets', {}, [], [], 'NO_ADS'],
+    ['only archived ads', {}, [set('s')], [ad('s', 'ARCHIVED')], 'NO_ADS'],
+    ['all ad sets paused', {}, [set('s', 'PAUSED')], [ad('s', 'ADSET_PAUSED')], 'ALL_AD_SETS_OFF'],
+    ['active ad set, every ad paused', {}, [set('s')], [ad('s', 'PAUSED')], 'ALL_ADS_OFF'],
+    ['active ad only in a paused ad set', {}, [set('s'), set('t', 'PAUSED')], [ad('s', 'PAUSED'), ad('t', 'ACTIVE')], 'ALL_ADS_OFF'],
+    ['campaign end passed', { stop_time: '2026-11-01T00:00:00Z' }, [set('s')], [ad('s')], 'ENDED'],
+    ['ad set end passed', {}, [set('s', 'ACTIVE', { end_time: '2026-11-01T00:00:00Z' })], [ad('s')], 'ENDED'],
+    ['starts later', {}, [set('s', 'ACTIVE', { start_time: '2026-11-09T00:00:00Z' })], [ad('s')], 'SCHEDULED'],
+  ])('%s → %s', (_n, campaign, adSets, ads, expected) => {
+    expect(metaDelivery(campaign, adSets, ads, now)).toBe(expected);
+  });
+  it('is unknown when the ad sets or ads could not be read', () => {
+    expect(metaDelivery({}, [set('s')], [ad('s')], now, false)).toBe('UNKNOWN');
+  });
+});
+
+describe('raw campaign listing (reconciliation)', () => {
+  afterEach(() => fake.uninstall());
+  let fake: ReturnType<typeof installFakeGraph>;
+  it('reads every page, drops repeated rows and rows of another account, and compares status with effective_status', async () => {
+    const row = (id: string, status: string, effective_status = status, account_id = '777') => ({ id, account_id, status, configured_status: status, effective_status });
+    const pages = [
+      [row('1', 'ACTIVE'), row('2', 'PAUSED'), row('3', 'ACTIVE', 'WITH_ISSUES')],
+      [row('3', 'ACTIVE', 'WITH_ISSUES'), row('4', 'ARCHIVED'), row('5', 'ACTIVE', 'ACTIVE', '888')], // repeat of 3; 5 belongs to another account
+      [row('6', 'PAUSED')],
+    ];
+    fake = installFakeGraph((r) => {
+      const i = Number(r.params.get('after') ?? 0);
+      const next = i + 1 < pages.length ? new URL(r.url) : null;
+      next?.searchParams.set('after', String(i + 1));
+      return { body: { data: pages[i], paging: next ? { next: next.toString() } : {} } };
+    });
+    const g = new GraphClient({ accessToken: 'x'.repeat(30), version: 'v26.0', maxRetries: 0 });
+    const counts = await fetchCampaignStatusCounts(g, '777', NOW);
+    expect(counts).toMatchObject({ total: 5, byEffectiveStatus: { ACTIVE: 1, PAUSED: 2, WITH_ISSUES: 1, ARCHIVED: 1 } });
+    expect(counts.raw).toEqual({ rows: 7, pages: 3, uniqueIds: 6, duplicateRows: 1, otherAccountRows: 1, byStatus: { ACTIVE: 2, PAUSED: 2, ARCHIVED: 1 }, statusDiffers: 1 });
+    const summary = buildCampaignCounts([{ metaAccountId: '777', name: 'X', status: 'succeeded', campaignCounts: counts }], [], null);
+    expect(summary.accounts[0]).toMatchObject({ total: 5, notArchived: 4, archived: 1, other: 1 });
   });
 });
 

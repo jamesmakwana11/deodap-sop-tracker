@@ -1,4 +1,4 @@
-import type { CampaignCountsSummary, DeliveryState } from './counts.js';
+import type { CampaignCountsSummary, DeliveryState, MetaDelivery } from './counts.js';
 import type { ManualCheckState, ManualEvent, ManualSummary } from './manual.js';
 
 /**
@@ -89,8 +89,10 @@ export interface CampaignAudit {
   whatIsOff: string[];
   /** Manual verification progress. Never counted as passes in the SOP %. */
   manual: ManualSummary;
-  /** Whether it is actually delivering (Ads Manager "Active"); null on audits from before this was recorded. */
+  /** Strict state: Active only when the campaign, every ad set and every ad are Active; null on older audits. */
   delivery: DeliveryState | null;
+  /** Meta delivery status (Ads Manager's "Active" = DELIVERING); absent on older audits. */
+  metaDelivery?: MetaDelivery | null;
 }
 
 export type RunSource = 'meta' | 'development';

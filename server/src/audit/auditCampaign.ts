@@ -1,4 +1,4 @@
-import { deliveryState } from '@sop/shared';
+import { deliveryState, metaDelivery } from '@sop/shared';
 import type { CampaignSnapshot, GeoLocation, RawAdSet } from '../meta/types.js';
 import type { AdAuditInput, AdSetAuditInput, CampaignAuditInput } from '../repositories/auditWriter.js';
 import { mapObjective } from './objective.js';
@@ -85,6 +85,8 @@ export function auditCampaigns(snapshots: CampaignSnapshot[], periodEnd: Date, n
         now,
         s.childrenKnown ?? s.adsKnown !== false,
       ),
+      // Meta's delivery status (Ads Manager "Active" = DELIVERING), for the count reconciliation only.
+      metaDelivery: metaDelivery(s.campaign, s.allAdSets ?? s.adSets, s.allAds ?? s.ads, now, s.childrenKnown ?? s.adsKnown !== false),
       currency: s.account.currency,
       spend7d: spendOf(s.insights7d),
       mainMetric: r.metric,

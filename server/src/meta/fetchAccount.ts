@@ -118,18 +118,40 @@ const uniqueById = <T extends { id: string }>(rows: T[]): T[] => {
  */
 export async function fetchCampaignStatusCounts(graph: GraphClient, metaAccountId: string, now = new Date()): Promise<MetaCampaignStatusCounts> {
   const act = `act_${metaAccountId}`;
-  const rows = await graph.getAll<{ id: string; account_id?: string; effective_status?: string; status?: string }>(`${act}/campaigns`, {
-    fields: STATUS_FIELDS,
-    effective_status: ALL_CAMPAIGN_STATUSES,
-    limit: 500,
-  });
+  let pages = 0;
+  const rows = await graph.getAll<{ id: string; account_id?: string; effective_status?: string; status?: string; configured_status?: string }>(
+    `${act}/campaigns`,
+    { fields: STATUS_FIELDS, effective_status: ALL_CAMPAIGN_STATUSES, limit: 500 },
+    50_000,
+    () => pages++,
+  );
+  const deduped = uniqueById(rows);
+  const mine = deduped.filter((r) => !r.account_id || r.account_id === metaAccountId);
+  const unique = mine.filter((r) => r.effective_status !== 'DELETED');
   const byEffectiveStatus: Record<string, number> = {};
-  const unique = uniqueById(rows).filter((r) => (!r.account_id || r.account_id === metaAccountId) && r.effective_status !== 'DELETED');
+  const byStatus: Record<string, number> = {};
+  let statusDiffers = 0;
   for (const r of unique) {
-    const s = r.effective_status ?? r.status ?? 'UNKNOWN';
-    byEffectiveStatus[s] = (byEffectiveStatus[s] ?? 0) + 1;
+    const eff = r.effective_status ?? r.status ?? 'UNKNOWN';
+    const set = r.status ?? r.configured_status ?? 'UNKNOWN';
+    byEffectiveStatus[eff] = (byEffectiveStatus[eff] ?? 0) + 1;
+    byStatus[set] = (byStatus[set] ?? 0) + 1;
+    if (set !== eff) statusDiffers++;
   }
-  return { total: unique.length, byEffectiveStatus, countedAt: now.toISOString() };
+  return {
+    total: unique.length,
+    byEffectiveStatus,
+    countedAt: now.toISOString(),
+    raw: {
+      rows: rows.length,
+      pages,
+      uniqueIds: deduped.length,
+      duplicateRows: rows.length - deduped.length,
+      otherAccountRows: deduped.length - mine.length,
+      byStatus,
+      statusDiffers,
+    },
+  };
 }
 const DAY = 86_400_000;
 

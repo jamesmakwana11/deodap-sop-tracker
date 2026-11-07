@@ -24,7 +24,9 @@ export function KpiGrid({ totals, counts }: { totals: DashboardTotals; counts?: 
   // Active campaigns = strictly active: the campaign, every ad set and every ad Active (Meta effective_status).
   // totals come from the same strict set, so the rating and SOP tiles add up to it.
   const strict = counts?.activeKnown !== false;
-  const total = counts?.all.total ?? null;
+  // Ads Manager lists campaigns without the archived ones; older audits only have the all-status total.
+  const notArchived = counts?.all.notArchived ?? null;
+  const total = notArchived ?? counts?.all.total ?? null;
   const kpis: Kpi[] = [
     {
       value: totals.active,
@@ -33,7 +35,7 @@ export function KpiGrid({ totals, counts }: { totals: DashboardTotals; counts?: 
       accent: 'border-t-brand',
       valueColor: 'text-brand',
     },
-    ...(total !== null ? [{ value: total, label: 'Total campaigns (all statuses)', accent: 'border-t-navy', valueColor: 'text-navy' }] : []),
+    ...(total !== null ? [{ value: total, label: notArchived !== null ? 'Total campaigns (not archived)' : 'Total campaigns (all statuses)', accent: 'border-t-navy', valueColor: 'text-navy' }] : []),
     { value: totals.good, label: 'Rated Good', accent: 'border-t-good', valueColor: 'text-good' },
     { value: totals.average, label: 'Rated Average', accent: 'border-t-[#e3a400]', valueColor: 'text-avg' },
     { value: totals.bad, label: 'Rated Bad', accent: 'border-t-bad', valueColor: 'text-bad' },

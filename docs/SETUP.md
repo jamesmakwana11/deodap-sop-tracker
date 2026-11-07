@@ -267,8 +267,9 @@ Section *Campaign counts* on the dashboard shows, per ad account (e.g. DeoDap, D
 
 | Column | Meaning |
 |---|---|
-| Total campaigns | Every non-deleted campaign in the ad account (Active, Paused, Archived, Other), each campaign ID once (also the **Total campaigns** tile) |
+| Total (not archived) | Every non-deleted, non-archived campaign, each campaign ID once: what Ads Manager lists by default (also the **Total campaigns** tile). Archived campaigns are counted in their own column |
 | Active campaigns | Strictly active as above (the **Active campaigns** tile) |
+| Delivering (Active in Ads Manager) | Meta's delivery status *active*: at least one active ad in an active ad set that has started and not ended, even if other ad sets or ads are off |
 | Campaign status Active (audited) | Every campaign whose own `effective_status` is ACTIVE; all are still audited for the SOP |
 | Not counted as Active | Why: some ad sets not active, some ads not active, no ad sets, no ads, ended, scheduled |
 | Paused / Archived / Other | By Meta status (Other = in process, with issues) |
@@ -289,10 +290,22 @@ lists (`(#100) Requesting for deleted objects is not supported in this endpoint`
 never asks for them, and its Meta client removes `DELETED` from any status filter as a safety net. Deleted campaigns
 are not current data and are not in any current total; audits made before they disappeared keep them in History.
 
-Real example, DeoDap ad account, 7 Nov 2026 15:40 IST: 903 campaigns (70 Active, 764 Paused, 69 Archived);
-**35 strictly active**. The other 35 with status Active have some ads not active (16), some ad sets not active (14),
-no ad sets (3) or have ended (2). This rule is stricter than Ads Manager's "Active" (delivering), so the tile can be
-lower than Ads Manager on purpose.
+**Count reconciliation with Ads Manager** (dashboard section) shows, per ad account and for All accounts, what Meta's
+API returned (pages, rows, duplicate rows removed, rows from another account removed, unique campaigns, counts by
+`status` and by `effective_status`, campaigns where the two differ) and how each dashboard number is made from it,
+including why each campaign with status Active is not delivering.
+
+Real example, DeoDap ad account 153787105, 7 Nov 2026 (read-only, all pages):
+
+| | Count | Why |
+|---|---|---|
+| Campaigns returned by the API | 903 | 903 rows, 903 unique IDs, all of account 153787105; `status` = `effective_status` for every one |
+| − Archived | 69 | Ads Manager hides archived campaigns |
+| **Total (not archived)** | **834** | Ads Manager was reported as 837; the 3 left over could not be traced in the API (no duplicates, no other account, no in-process or with-issues campaigns, no unpublished new campaigns; only 2 deleted in the last week, which Ads Manager does not list) — compare Ads Manager's filters and the time it was read |
+| Campaign status Active | 70 | `effective_status` ACTIVE |
+| **Delivering = Active in Ads Manager** | **45** | Equals Meta's own delivery status for all 70 |
+| Status Active but not delivering | 25 | All ads off in the active ad sets 15, no ads (or only archived) 6, all ad sets off 3, completed 1 |
+| **Active campaigns (strict)** | **35** | 10 of the 45 delivering have a paused or archived ad set or ad |
 
 ### Refresh reliability
 

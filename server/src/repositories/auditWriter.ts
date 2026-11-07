@@ -1,4 +1,4 @@
-import type { DeliveryState, MetaCampaignStatusCounts } from '@sop/shared';
+import type { DeliveryState, MetaCampaignStatusCounts, MetaDelivery } from '@sop/shared';
 import {
   computeCompliance,
   type CheckResult,
@@ -111,6 +111,7 @@ export interface CampaignAuditInput {
   objective: ObjectiveLabel;
   effectiveStatus: string | null;
   delivery?: DeliveryState | null;
+  metaDelivery?: MetaDelivery | null;
   currency: string;
   spend7d: number;
   mainMetric: { kind: MetricKind; value: number | null } | null;
@@ -181,6 +182,7 @@ export async function insertCampaignAudits(runId: string, items: { accountId: st
       objective: c.objective,
       effectiveStatus: c.effectiveStatus,
       delivery: c.delivery ?? null,
+      metaDelivery: c.metaDelivery ?? null,
       currency: c.currency,
       spend7d: c.spend7d,
       mainMetricKind: c.mainMetric?.kind ?? null,

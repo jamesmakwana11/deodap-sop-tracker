@@ -196,11 +196,12 @@ export class GraphClient {
   }
 
   /** Follows paging.next until exhausted (or until maxItems). */
-  async getAll<T>(path: string, params: GraphParams = {}, maxItems = 50_000): Promise<T[]> {
+  async getAll<T>(path: string, params: GraphParams = {}, maxItems = 50_000, onPage?: () => void): Promise<T[]> {
     const items: T[] = [];
     let url: string | undefined = this.buildUrl(path, params);
     while (url) {
       const page: Paged<T> = await this.request<Paged<T>>(url);
+      onPage?.();
       items.push(...(page.data ?? []));
       url = page.paging?.next;
       if (url && new URL(url).origin !== GRAPH_BASE_URL) throw new Error('Unexpected paging host from Meta');
