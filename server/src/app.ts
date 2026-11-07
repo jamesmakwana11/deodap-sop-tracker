@@ -22,7 +22,9 @@ import { usersRouter } from './routes/users.js';
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  if (env.TRUST_PROXY > 0) app.set('trust proxy', env.TRUST_PROXY);
+  // Trust X-Forwarded-* only from known proxies: TRUST_PROXY hops, or Render's one proxy (Render sets RENDER=true).
+  const proxies = env.TRUST_PROXY > 0 ? env.TRUST_PROXY : process.env.RENDER === 'true' ? 1 : 0;
+  if (proxies > 0) app.set('trust proxy', proxies);
 
   app.use(
     helmet({

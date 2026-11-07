@@ -71,11 +71,12 @@ export async function recordRunAccount(
   accountId: string,
   status: 'succeeded' | 'failed',
   error: string | null = null,
+  notes: string[] = [],
 ): Promise<void> {
   const run = store.c.auditRuns.get(runId);
   if (!run) return;
   const accounts = run.accounts.filter((a) => a.adAccountId !== accountId);
-  accounts.push({ adAccountId: accountId, status, error });
+  accounts.push({ adAccountId: accountId, status, error, ...(notes.length ? { notes } : {}) });
   await store.c.auditRuns.update(runId, { accounts });
 }
 

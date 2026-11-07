@@ -1,5 +1,6 @@
 import type { MetaAppPublicConfig } from '@sop/shared';
 import { useState, type FormEvent } from 'react';
+import { CopyField } from '../ui/CopyField';
 import { api } from '../../api/http';
 import { Alert, Button, Field, Input } from '../ui/controls';
 
@@ -10,7 +11,9 @@ import { Alert, Button, Field, Input } from '../ui/controls';
 export function MetaAppForm({ app, onSaved }: { app: MetaAppPublicConfig; onSaved: (text: string) => void }) {
   const [appId, setAppId] = useState(app.appId ?? '');
   const [appSecret, setAppSecret] = useState('');
-  const [redirectUri, setRedirectUri] = useState(app.redirectUri ?? '');
+  // Only a deliberately saved fixed URI is shown here; empty means "detect automatically".
+  const [redirectUri, setRedirectUri] = useState(app.fixedRedirectUri ?? '');
+  const [showFixed, setShowFixed] = useState(Boolean(app.fixedRedirectUri));
   const [graphVersion, setGraphVersion] = useState(app.graphVersion);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +43,29 @@ export function MetaAppForm({ app, onSaved }: { app: MetaAppPublicConfig; onSave
           ? 'Saved on the server.'
           : app.source === 'environment'
             ? 'Currently read from the server’s environment (META_APP_ID, META_APP_SECRET). Saving here overrides it.'
-            : 'Not set yet. Needed for “Connect Meta” (Facebook login). A system-user token works without it.'}{' '}
-        In the Meta app, add the redirect URI below under Facebook Login → Valid OAuth Redirect URIs.
+            : 'Not set yet. Needed for “Connect Meta” (Facebook login). A system-user token works without it.'}
       </p>
+
+      <div className="mt-3 rounded-xl border border-line bg-head/40 p-3.5">
+        <div className="text-[13px] font-semibold text-navy">
+          Redirect URI {app.redirectUriSource === 'detected' ? '(detected from this address)' : `(fixed, from ${app.redirectUriSource === 'settings' ? 'Settings' : 'META_REDIRECT_URI'})`}
+        </div>
+        <CopyField value={app.redirectUri} label="Redirect URI" />
+        <p className="mt-2 text-[13px] leading-snug text-muted">
+          Add this exact address once in the Meta app: <b>Meta for Developers → your app → Facebook Login → Settings → Valid OAuth
+          Redirect URIs</b>. Each domain the tracker is opened on (localhost, the Render address, a custom domain) gives its own address,
+          and each one must be added there once.
+        </p>
+        {app.redirectUriSource !== 'detected' && app.detectedRedirectUri !== app.redirectUri && (
+          <p className="mt-2 text-[13px] text-avg">This page is open on another address ({app.detectedRedirectUri}). Sign-in will return to the fixed URI above.</p>
+        )}
+        {app.ignoredFixedRedirectUri && (
+          <p className="mt-2 text-[13px] text-avg">
+            A saved localhost redirect URI ({app.ignoredFixedRedirectUri}) is ignored on this domain. Clear it below and save to remove it.
+          </p>
+        )}
+      </div>
+
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Field label="App ID">
           <Input value={appId} onChange={(e) => setAppId(e.target.value)} inputMode="numeric" autoComplete="off" required />
@@ -56,9 +79,17 @@ export function MetaAppForm({ app, onSaved }: { app: MetaAppPublicConfig; onSave
             placeholder={app.hasAppSecret ? '••••••••••••••••' : '32-character code'}
           />
         </Field>
-        <Field label="Redirect URI" hint={`Default: ${app.defaultRedirectUri}`}>
-          <Input type="url" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder={app.defaultRedirectUri} />
-        </Field>
+        {showFixed ? (
+          <Field label="Fixed redirect URI (optional)" hint="Leave empty to detect it automatically (recommended).">
+            <Input type="url" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder={app.detectedRedirectUri} />
+          </Field>
+        ) : (
+          <div className="flex items-end">
+            <button type="button" className="h-9 text-[13px] font-semibold text-brand hover:underline" onClick={() => setShowFixed(true)}>
+              Use a fixed redirect URI instead…
+            </button>
+          </div>
+        )}
         <Field label="Graph API version">
           <Input value={graphVersion} onChange={(e) => setGraphVersion(e.target.value)} placeholder="v26.0" />
         </Field>

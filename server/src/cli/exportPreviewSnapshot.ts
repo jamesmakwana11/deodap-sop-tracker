@@ -48,7 +48,7 @@ async function main() {
     connections: [],
     accounts: [],
     schedule: { timeIst: '07:30', nextRunAt: null },
-    app: { appId: null, hasAppSecret: false, redirectUri: null, defaultRedirectUri: '', graphVersion: env.META_GRAPH_VERSION, source: 'none' },
+    app: { appId: null, hasAppSecret: false, redirectUri: '', redirectUriSource: 'detected', detectedRedirectUri: '', fixedRedirectUri: null, ignoredFixedRedirectUri: null, graphVersion: env.META_GRAPH_VERSION, source: 'none' },
     encryptionKey: 'none',
   };
   const run = await findRun(runId);

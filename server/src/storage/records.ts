@@ -1,4 +1,6 @@
 import type {
+  AccountAccessInfo,
+  TokenCheckInfo,
   CheckResult,
   ManualStatus,
   MetricKind,
@@ -52,6 +54,9 @@ export interface MetaConnectionRecord {
   connectedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Added later; absent on older records. Absent useAppSecretProof means "use it" (the old behaviour). */
+  useAppSecretProof?: boolean;
+  check?: TokenCheckInfo | null;
 }
 
 /** id = SHA-256 of the OAuth state. */
@@ -59,6 +64,8 @@ export interface OAuthStateRecord {
   id: string;
   userId: string;
   expiresAt: string;
+  /** The redirect URI sent to Meta's login dialog; reused for the code exchange. */
+  redirectUri?: string;
 }
 
 export interface AdAccountRecord {
@@ -76,6 +83,9 @@ export interface AdAccountRecord {
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Added later; absent on older records. */
+  addedManually?: boolean;
+  access?: AccountAccessInfo | null;
 }
 
 /** id = setting key. */
@@ -90,6 +100,8 @@ export interface RunAccountResult {
   adAccountId: string;
   status: 'succeeded' | 'failed';
   error: string | null;
+  /** What could not be read although the account succeeded (absent on older runs). */
+  notes?: string[];
 }
 
 export interface AuditRunRecord {

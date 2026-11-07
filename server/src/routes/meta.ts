@@ -7,7 +7,8 @@ import { env } from '../config/env.js';
 import { badRequest, HttpError, notFoundError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { MetaApiError } from '../meta/graphClient.js';
-import { graphVersion, metaAppPublicConfig, saveMetaAppConfig } from '../meta/appConfig.js';
+import { graphVersion, metaAppPublicConfig, resolveRedirectUri, saveMetaAppConfig } from '../meta/appConfig.js';
+import { detectedRedirectUri, isLoopbackHost, META_CALLBACK_PATH } from '../http/publicUrl.js';
 import { buildAuthorizeUrl, metaAppConfig, requireMetaAppConfig } from '../meta/oauth.js';
 import { encryptionKeySource } from '../security/tokenCrypto.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -20,7 +21,7 @@ import {
   saveOAuthState,
   setAccountSelected,
 } from '../repositories/metaRepository.js';
-import { connectWithCode, connectWithToken, discoverAccounts } from '../services/metaConnectionService.js';
+import { addAccountById, connectWithCode, connectWithToken, recheckConnection } from '../services/metaConnectionService.js';
 import { getSyncTimeIst, nextRunAt, SYNC_TIME_SETTING } from '../services/scheduleTime.js';
 import { numericIdParams } from '../http/params.js';
 
@@ -30,13 +31,13 @@ numericIdParams(metaRouter, 'id');
 metaRouter.get(
   '/status',
   requireRole('viewer'),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const timeIst = await getSyncTimeIst();
     const body: MetaStatusResponse = {
       oauthConfigured: Boolean(metaAppConfig()) && encryptionKeySource() !== 'none',
       tokenStorageConfigured: encryptionKeySource() !== 'none',
       graphVersion: graphVersion(),
-      app: metaAppPublicConfig(),
+      app: metaAppPublicConfig(detectedRedirectUri(req)),
       encryptionKey: encryptionKeySource(),
       connections: await listConnections(),
       accounts: await listAccounts(),
@@ -52,25 +53,31 @@ metaRouter.get(
   requireRole('admin'),
   asyncHandler(async (req, res) => {
     const cfg = requireMetaAppConfig();
+    const redirectUri = resolveRedirectUri(cfg, detectedRedirectUri(req)).uri;
     const state = randomBytes(24).toString('base64url');
-    await saveOAuthState(state, req.user!.id);
-    res.json({ url: buildAuthorizeUrl(cfg, state) });
+    await saveOAuthState(state, req.user!.id, redirectUri);
+    res.json({ url: buildAuthorizeUrl(cfg, state, redirectUri), redirectUri });
   }),
 );
 
-/** Step 2: Facebook redirects here. Always ends with a redirect back to Settings. */
+/**
+ * Step 2: Facebook redirects here. Always ends with a redirect back to Settings — a relative one,
+ * so it stays on the domain this callback was reached on (localhost, Render or a custom domain).
+ */
 metaRouter.get('/oauth/callback', async (req, res) => {
-  const back = (params: Record<string, string>) =>
-    res.redirect(`${env.CLIENT_ORIGIN}/settings?${new URLSearchParams(params).toString()}`);
+  const back = (params: Record<string, string>) => res.redirect(`/settings?${new URLSearchParams(params).toString()}`);
   try {
     if (!req.user || req.user.role !== 'admin' || req.user.mustChangePassword) return back({ meta: 'error', reason: 'Sign in as an admin, then connect again.' });
     const { code, state, error_description: denied } = req.query as Record<string, string | undefined>;
     if (denied || !code) return back({ meta: 'error', reason: denied ?? 'Meta did not return an authorisation code.' });
-    if (!state || !(await consumeOAuthState(state, req.user.id))) {
+    const savedRedirectUri = state ? await consumeOAuthState(state, req.user.id) : null;
+    if (savedRedirectUri === null) {
       return back({ meta: 'error', reason: 'The sign-in link expired or was already used. Try again.' });
     }
-    const { accountsFound } = await connectWithCode(code, req.user.id);
-    return back({ meta: 'connected', accounts: String(accountsFound) });
+    // Exactly the URI the login dialog received (older states without one: recompute it).
+    const redirectUri = savedRedirectUri || resolveRedirectUri(requireMetaAppConfig(), detectedRedirectUri(req)).uri;
+    const { accountsFound, report } = await connectWithCode(code, req.user.id, redirectUri);
+    return back({ meta: 'connected', accounts: String(accountsFound), readable: String(report.readable) });
   } catch (err) {
     console.error('Meta OAuth callback failed', err instanceof Error ? err.message : err);
     const reason = err instanceof HttpError || err instanceof MetaApiError ? err.message : 'Could not complete the Meta connection.';
@@ -78,24 +85,41 @@ metaRouter.get('/oauth/callback', async (req, res) => {
   }
 });
 
-const TokenBody = z.object({ accessToken: z.string().trim().min(20).max(1000) });
+const TokenBody = z.object({
+  accessToken: z.string().trim().min(20, 'Paste the whole access token.').max(1000),
+  /** Optional: ad account IDs to add when automatic discovery does not list them. */
+  adAccountIds: z.array(z.string().max(2000)).max(50).optional(),
+});
 
+/** Validates the token (status, type, permissions, account access) before anything is saved. */
 metaRouter.post(
   '/connections/token',
   requireRole('admin'),
   asyncHandler(async (req, res) => {
-    const { accessToken } = parse(TokenBody, req.body);
-    const { connection, accountsFound } = await connectWithToken(accessToken, req.user!.id);
-    res.status(201).json({ connection, accountsFound });
+    const { accessToken, adAccountIds } = parse(TokenBody, req.body);
+    const { connection, accountsFound, report } = await connectWithToken(accessToken, req.user!.id, adAccountIds);
+    res.status(201).json({ connection, accountsFound, report });
   }),
 );
 
+/** "Check again": re-inspects the token, rediscovers accounts and test-reads each one. */
 metaRouter.post(
   '/connections/:id/discover',
   requireRole('admin'),
   asyncHandler(async (req, res) => {
-    const accountsFound = await discoverAccounts(String(req.params.id));
-    res.json({ accountsFound });
+    res.json(await recheckConnection(String(req.params.id)));
+  }),
+);
+
+const AccountBody = z.object({ adAccountId: z.string().trim().min(1).max(40) });
+
+/** Manual fallback: add an ad account by ID once the token is shown to read it. */
+metaRouter.post(
+  '/connections/:id/accounts',
+  requireRole('admin'),
+  asyncHandler(async (req, res) => {
+    const { adAccountId } = parse(AccountBody, req.body);
+    res.status(201).json(await addAccountById(String(req.params.id), adAccountId));
   }),
 );
 
@@ -150,8 +174,8 @@ const AppBody = z.object({
 metaRouter.get(
   '/app',
   requireRole('admin'),
-  asyncHandler(async (_req, res) => {
-    res.json({ app: metaAppPublicConfig() });
+  asyncHandler(async (req, res) => {
+    res.json({ app: metaAppPublicConfig(detectedRedirectUri(req)) });
   }),
 );
 
@@ -163,7 +187,13 @@ metaRouter.put(
     if (body.appSecret && !/^[0-9a-f]{32}$/i.test(body.appSecret)) {
       throw badRequest('The App Secret is the 32-character code under App settings → Basic.');
     }
-    const app = await saveMetaAppConfig(body, req.user!.id);
+    if (body.redirectUri) {
+      // Optional fixed URI: it must reach this app's callback route.
+      const u = new URL(body.redirectUri);
+      if (u.pathname !== META_CALLBACK_PATH || u.search || u.hash) throw badRequest(`A fixed redirect URI must end in ${META_CALLBACK_PATH}.`);
+      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopbackHost(u.host))) throw badRequest('A fixed redirect URI must use https:// (http:// only for localhost).');
+    }
+    const app = await saveMetaAppConfig(body, req.user!.id, detectedRedirectUri(req));
     if (!app.hasAppSecret) throw badRequest('Enter the App Secret too. It is stored encrypted and never shown again.');
     res.json({ app });
   }),

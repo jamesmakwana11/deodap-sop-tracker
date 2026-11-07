@@ -149,4 +149,6 @@ export interface CampaignSnapshot {
   insights7d: RawInsight | null;
   /** Insights for the campaign's first 14 days (Leads only). */
   insightsFirst14d: RawInsight | null;
+  /** Why insights could not be read for the account (then performance is Not rated, not "no spend"). */
+  insightsUnavailable?: string | null;
 }

@@ -11,7 +11,6 @@ export default defineConfig({
       CLIENT_ORIGIN: 'http://localhost:5173',
       META_APP_ID: 'test-app-id',
       META_APP_SECRET: 'test-app-secret',
-      META_REDIRECT_URI: 'http://localhost:5173/api/meta/oauth/callback',
       TOKEN_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       SYNC_TIME_IST: '',
     },

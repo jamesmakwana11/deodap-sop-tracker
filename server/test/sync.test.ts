@@ -36,7 +36,7 @@ describe('sync', () => {
     expect(run.status).toBe('partial');
     expect(run.periodStart).toBe('2026-10-30');
     expect(run.periodEnd).toBe('2026-11-05');
-    expect(run.accounts.find((a) => a.metaAccountId === '1002')?.error).toMatch(/Meta access was refused/);
+    expect(run.accounts.find((a) => a.metaAccountId === '1002')?.error).toMatch(/Meta refused access to ad account 1002: .*assigned to the ad account in Business Settings/);
 
     const dash = (await agent.get('/api/dashboard')).body as DashboardResponse;
     expect(dash.run?.source).toBe('meta');

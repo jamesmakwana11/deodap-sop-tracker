@@ -1,4 +1,4 @@
-import { ACCOUNT_STATUS_LABEL, hasRole, type AdAccountInfo, type MetaConnectionInfo, type MetaStatusResponse } from '@sop/shared';
+import { ACCOUNT_STATUS_LABEL, hasRole, type AdAccountInfo, type MetaDiscoveryReport, type MetaStatusResponse } from '@sop/shared';
 import { useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/http';
@@ -8,75 +8,11 @@ import { Card } from '../components/ui/Card';
 import { Alert, Button, Field, Input } from '../components/ui/controls';
 import { DataStorageCard } from '../components/settings/DataStorageCard';
 import { MetaAppForm } from '../components/settings/MetaAppForm';
+import { AccessCell, ConnectionRow, DiscoveryReport } from '../components/settings/MetaConnection';
 import { Section } from '../components/ui/Section';
 import { useApi } from '../hooks/useApi';
-import { formatIst, formatRelative } from '../lib/format';
+import { formatIst } from '../lib/format';
 import { useSync } from '../sync/SyncContext';
-
-const DAY = 86_400_000;
-
-function ConnectionRow({ c, admin, onChanged }: { c: MetaConnectionInfo; admin: boolean; onChanged: (msg: string) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const expiresSoon = c.expiresAt && new Date(c.expiresAt).getTime() - Date.now() < 7 * DAY;
-
-  async function act(fn: () => Promise<string>) {
-    setBusy(true);
-    setError(null);
-    try {
-      onChanged(await fn());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <li className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 last:border-b-0">
-      <div>
-        <div className="font-semibold text-ink">
-          {c.metaUserName ?? 'Meta user'} <span className="text-[13px] font-normal text-muted">({c.tokenType === 'system_user' ? 'system user' : 'Facebook login'}, ID {c.metaUserId})</span>
-        </div>
-        <div className="text-[13px] text-muted">
-          Permissions: {c.scopes.length ? c.scopes.join(', ') : 'not reported'} · Connected {formatIst(c.createdAt)}
-        </div>
-        <div className={`text-[13px] ${c.status === 'invalid' || expiresSoon ? 'font-semibold text-bad' : 'text-muted'}`}>
-          {c.status === 'invalid'
-            ? `Needs reconnecting: ${c.lastError ?? 'token no longer valid'}`
-            : c.expiresAt
-              ? `Token expires ${formatRelative(c.expiresAt)} (${formatIst(c.expiresAt)})${expiresSoon ? ' — reconnect soon' : ''}`
-              : 'Token does not expire'}
-        </div>
-        {error && <Alert>{error}</Alert>}
-      </div>
-      {admin && (
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void act(async () => `Found ${(await api<{ accountsFound: number }>(`/meta/connections/${c.id}/discover`, { method: 'POST' })).accountsFound} ad accounts.`)}
-          >
-            Re-scan ad accounts
-          </Button>
-          <Button
-            variant="danger"
-            disabled={busy}
-            onClick={() => {
-              if (!window.confirm('Remove this Meta connection? The stored token is deleted; past audits are kept.')) return;
-              void act(async () => {
-                await api(`/meta/connections/${c.id}`, { method: 'DELETE' });
-                return 'Connection removed.';
-              });
-            }}
-          >
-            Remove
-          </Button>
-        </div>
-      )}
-    </li>
-  );
-}
 
 function AccountsTable({ accounts, admin, onToggle }: { accounts: AdAccountInfo[]; admin: boolean; onToggle: (a: AdAccountInfo) => void }) {
   if (accounts.length === 0) return <p className="text-[14px] text-muted">No ad accounts found yet. Connect Meta first.</p>;
@@ -85,7 +21,7 @@ function AccountsTable({ accounts, admin, onToggle }: { accounts: AdAccountInfo[
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="bg-head text-left text-navy">
-            {['Audit', 'Ad account', 'Account ID', 'Business', 'Currency', 'Time zone', 'Meta status'].map((h) => (
+            {['Audit', 'Ad account', 'Account ID', 'Access', 'Business', 'Currency', 'Time zone', 'Meta status'].map((h) => (
               <th key={h} className="px-2.5 py-2.5 font-semibold">
                 {h}
               </th>
@@ -105,8 +41,14 @@ function AccountsTable({ accounts, admin, onToggle }: { accounts: AdAccountInfo[
                   aria-label={`Audit ${a.name}`}
                 />
               </td>
-              <td className="px-2.5 py-2 font-semibold">{a.name}</td>
+              <td className="px-2.5 py-2 font-semibold">
+                {a.name}
+                {a.addedManually && <div className="text-[12px] font-normal text-muted">added by ID</div>}
+              </td>
               <td className="px-2.5 py-2 tabular-nums">{a.metaAccountId}</td>
+              <td className="px-2.5 py-2">
+                <AccessCell access={a.access} />
+              </td>
               <td className="px-2.5 py-2">{a.businessName ?? '–'}</td>
               <td className={`px-2.5 py-2 ${a.currency !== 'INR' ? 'text-avg' : ''}`} title={a.currency !== 'INR' ? 'The ₹800 budget rule is not checkable in other currencies' : undefined}>
                 {a.currency}
@@ -128,11 +70,16 @@ export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const state = useApi<MetaStatusResponse>('/meta/status');
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(() => {
-    if (params.get('meta') === 'connected') return { tone: 'success', text: `Meta connected. Found ${params.get('accounts') ?? 0} ad accounts — tick the ones to audit.` };
+    if (params.get('meta') === 'connected') {
+      const readable = params.get('readable');
+      return { tone: 'success', text: `Meta connected. Found ${params.get('accounts') ?? 0} ad accounts${readable !== null ? `; campaigns readable in ${readable}` : ''} — tick the ones to audit.` };
+    }
     if (params.get('meta') === 'error') return { tone: 'error', text: params.get('reason') ?? 'The Meta connection did not complete.' };
     return null;
   });
   const [token, setToken] = useState('');
+  const [accountIds, setAccountIds] = useState('');
+  const [lastReport, setLastReport] = useState<{ report: MetaDiscoveryReport; accountsFound: number } | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -156,9 +103,15 @@ export function SettingsPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const r = await api<{ accountsFound: number }>('/meta/connections/token', { method: 'POST', body: { accessToken: token } });
+      const ids = accountIds.split(/[\s,;]+/).filter(Boolean);
+      const r = await api<{ accountsFound: number; report: MetaDiscoveryReport }>('/meta/connections/token', {
+        method: 'POST',
+        body: { accessToken: token.trim(), ...(ids.length ? { adAccountIds: ids } : {}) },
+      });
       setToken('');
-      done(`Token saved. Found ${r.accountsFound} ad accounts — tick the ones to audit.`);
+      setAccountIds('');
+      setLastReport(r);
+      done(`Token checked and saved. ${r.accountsFound} ad accounts available — tick the ones to audit.`);
     } catch (err) {
       done((err as Error).message, 'error');
     } finally {
@@ -197,7 +150,8 @@ export function SettingsPage() {
     <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-7">
       <h1 className="font-serif text-3xl font-semibold text-navy">Meta & schedule</h1>
       <p className="mt-1 text-[14px] text-muted">
-        The tracker only reads from Meta (permission <code>ads_read</code>). It never changes campaigns, ad sets or ads.
+        The tracker only reads from Meta: <code>ads_read</code> is all it needs (<code>ads_management</code> also works; extra
+        permissions are accepted). It never changes campaigns, ad sets or ads.
         {!admin && ' Only admins can change these settings.'}
       </p>
       {message && (
@@ -240,10 +194,12 @@ export function SettingsPage() {
                     )}
                   </div>
                   <form onSubmit={saveToken}>
-                    <h4 className="font-semibold text-navy">Or use a system-user token</h4>
+                    <h4 className="font-semibold text-navy">Or paste an access token</h4>
                     <p className="mt-1 text-[13px] text-muted">
-                      Recommended for a daily job: a Business Manager system user with <code>ads_read</code> on the ad accounts. It
-                      does not expire. The token is encrypted on the server and never shown again.
+                      A system-user token (recommended for the daily refresh; it does not expire) or a user token, from any Meta app.
+                      It needs <code>ads_read</code> (or <code>ads_management</code>); extra permissions are fine. It is checked —
+                      validity, type, expiry, permissions and ad account access — before anything is saved, then encrypted on the
+                      server and never shown again.
                     </p>
                     <div className="mt-3 flex gap-2">
                       <Input
@@ -255,13 +211,25 @@ export function SettingsPage() {
                         className="flex-1"
                         disabled={!s.tokenStorageConfigured}
                       />
-                      <Button type="submit" disabled={busy || token.length < 20}>
-                        {busy ? 'Checking…' : 'Save'}
+                      <Button type="submit" disabled={busy || token.trim().length < 20}>
+                        {busy ? 'Checking…' : 'Check & save'}
                       </Button>
                     </div>
+                    <label className="mt-2 block text-[13px] text-muted">
+                      Ad account IDs (optional) — for accounts Meta does not list automatically, e.g. accounts shared from another Business
+                      <textarea
+                        value={accountIds}
+                        onChange={(e) => setAccountIds(e.target.value)}
+                        rows={2}
+                        placeholder="act_1234567890, 9876543210"
+                        className="mt-1 w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-[14px] text-ink outline-none focus:border-brand"
+                        disabled={!s.tokenStorageConfigured}
+                      />
+                    </label>
                   </form>
                 </div>
               )}
+              {lastReport && <DiscoveryReport {...lastReport} />}
               <p className="mt-3 text-[12px] text-muted">Graph API {s.graphVersion}</p>
             </Card>
           </Section>

@@ -61,19 +61,47 @@ A system-user token does not expire, so the morning refresh never stops because 
 1. In **Meta Business Suite → Business settings → Users → System users**, add a system user.
 2. **Assign assets**: give it the DeoDap and Dabster ad accounts with view/read access.
 3. **Generate new token**: choose your Meta app, tick **`ads_read`**, choose *never expire*.
-4. In the tracker: **Meta & schedule → Or use a system-user token**, paste it, Save.
+4. In the tracker: **Meta & schedule → Or paste an access token**, paste it, **Check & save**.
 
-If `META_APP_ID` / `META_APP_SECRET` are set, the tracker verifies the token with Meta (`debug_token`) and
-rejects tokens without `ads_read` or for another app.
+**What is checked before anything is saved.** The token's status, type (user or system user), issuing app, expiry
+and granted permissions (via Meta's `debug_token`; tokens of another app, e.g. Graph API Explorer, are inspected
+by themselves), then which ad accounts it can see, and a test read of campaigns and insights per account.
+
+- **Permissions:** `ads_read` is all the tracker needs (`ads_management` also works). Tokens with more permissions
+  are accepted. `business_management` is optional: with it, Business portfolio names are shown; without it, they are
+  not, and nothing else changes. (Asking Meta for the Business name without that permission gives
+  `(#100) Requires business_management permission to access the field.` — the tracker no longer asks for it unless
+  the token has the permission.)
+- **Ad accounts:** found automatically through `me/adaccounts` (all pages). Accounts Meta does not list — for
+  example ones shared from another Business — can be entered by ID when saving the token, or later with
+  **Add ad account by ID**. An ID the token cannot see is explained (usually: assign the ad account to the system
+  user in Business settings), and a token that can see no ad account at all is not saved.
+- **Access per account** (Campaigns ✓/✗, Insights ✓/✗, with the reason) is shown in *Ad accounts to audit*.
+  **Check again** re-runs all of this for a saved connection.
+- **During a refresh**, campaigns and ad sets are required. If Meta refuses insights or some creative fields for an
+  account, that account is still audited: affected ratings show *Not rated — not checkable* and checks show
+  NOT CHECKABLE (never guessed), and History shows what could not be read.
+- Tokens are stored encrypted on the server. Connections saved by earlier versions keep working; **Check again**
+  adds the new details.
 
 ### Option B — Connect with Facebook login (OAuth)
 
 1. At [developers.facebook.com](https://developers.facebook.com) create an app of type **Business** and add
    **Facebook Login for Business** (or Facebook Login) and the **Marketing API** product.
-2. **App settings → Basic**: copy the App ID and App secret into `META_APP_ID` and `META_APP_SECRET`.
-3. **Facebook Login → Settings → Valid OAuth Redirect URIs**: add exactly the value of `META_REDIRECT_URI`:
-   - development: `http://localhost:5173/api/meta/oauth/callback`
-   - production: `https://<your-domain>/api/meta/oauth/callback`
+2. **App settings → Basic**: copy the App ID and App secret into the tracker under **Meta & schedule → Meta app**
+   (or into `META_APP_ID` and `META_APP_SECRET` on the server).
+3. **Facebook Login → Settings → Valid OAuth Redirect URIs**: add the redirect URI shown under
+   **Meta & schedule → Meta app** (with a **Copy** button). Nothing needs configuring: the server works it out from
+   the address the app is opened on, always ending in `/api/meta/oauth/callback`:
+   - local development: `http://localhost:5173/api/meta/oauth/callback`
+   - Render: `https://<service>.onrender.com/api/meta/oauth/callback`
+   - custom domain: `https://<your-domain>/api/meta/oauth/callback` (https is used automatically in production)
+
+   **Meta only accepts redirect URIs listed there, so each new address must be added once** — for example both the
+   `onrender.com` address and a custom domain, if people use both. The login dialog and the token exchange always use
+   the identical URI. Behind a reverse proxy, `X-Forwarded-Proto` / `X-Forwarded-Host` are used only from a trusted
+   proxy: automatically on Render, elsewhere with `TRUST_PROXY=1`. A fixed URI can still be set (Settings or
+   `META_REDIRECT_URI`) but is rarely needed.
 4. In the tracker (as an admin): **Meta & schedule → Connect Meta**, sign in, allow `ads_read`.
 
 Notes:
@@ -138,7 +166,7 @@ password is invalid, the server refuses to start and says why.
 ```bash
 cp .env.example .env
 # set NODE_ENV=production, CLIENT_ORIGIN=https://<domain>,
-# TOKEN_ENCRYPTION_KEY, META_* and META_REDIRECT_URI=https://<domain>/api/meta/oauth/callback, TRUST_PROXY=1
+# TOKEN_ENCRYPTION_KEY, META_APP_ID / META_APP_SECRET (or enter them in Settings), TRUST_PROXY=1
 docker compose up -d --build
 docker compose exec app npm run user:create -- --email you@deodap.com --name "Your Name" --role admin
 ```
@@ -179,7 +207,7 @@ folder: the JSON storage is designed for a single instance.
 - [ ] Development data cleared (`npm run db:clear:dev`).
 - [ ] `DATA_DIR` on a persistent disk or volume (see section 12); Data & backups shows no warning.
 - [ ] Copies of the data folder off the server from time to time (daily backups are made inside it automatically).
-- [ ] The Meta redirect URI in the app matches `META_REDIRECT_URI` exactly.
+- [ ] The redirect URI shown in **Meta & schedule → Meta app** (for each domain in use) is listed in the Meta app's *Valid OAuth Redirect URIs*.
 
 ---
 
@@ -265,12 +293,13 @@ Word (.docx) or CSV** — and the records: **current filters** (what the screen 
 
 | Symptom | Fix |
 |---|---|
-| "Meta is not configured on the server" | Set `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `TOKEN_ENCRYPTION_KEY`; restart |
-| Facebook says the redirect URI is not allowed | Add the exact `META_REDIRECT_URI` to *Valid OAuth Redirect URIs* |
-| Run *partial*, "Meta access was refused" for one account | The token's user/system user lacks access to that ad account; assign it in Business settings |
+| "Meta is not configured" | Enter the App ID and App Secret under **Meta & schedule → Meta app** (or set `META_APP_ID`, `META_APP_SECRET`) |
+| Facebook says the redirect URI is not allowed ("URL blocked") | Copy the redirect URI from **Meta & schedule → Meta app**, opened on the same domain, into *Valid OAuth Redirect URIs*. Each domain needs its own entry. |
+| Run *partial*, "This token cannot see ad account …" | The token's user/system user is not assigned to that ad account; assign it in Business settings, then **Check again** |
+| "(#100) Requires business_management permission to access the field." | Fixed in this version (the field is only read when the token has that optional permission). Update and redeploy. |
 | Connection "needs reconnecting" | Token expired or revoked: Connect Meta again or paste a new system-user token |
 | "Meta rate limit reached" | Meta throttled the account; the client already retried with backoff. The next refresh will try again |
-| Signed out right after signing in (production) | Serve over HTTPS, or set `TRUST_PROXY=1` behind a proxy |
+| Signed out right after signing in (production) | Serve over HTTPS, or set `TRUST_PROXY=1` behind a proxy (automatic on Render) |
 | Lost `TOKEN_ENCRYPTION_KEY` | Set a new key, remove the connection in Settings and connect again; audit history is unaffected |
 
 ---

@@ -1,5 +1,6 @@
 import type { MetaAppPublicConfig } from '@sop/shared';
 import { env } from '../config/env.js';
+import { isLoopbackHost } from '../http/publicUrl.js';
 import { decryptSecret, encryptSecret } from '../security/tokenCrypto.js';
 import { store } from '../storage/store.js';
 
@@ -20,13 +21,34 @@ interface StoredMetaApp {
 export interface MetaAppConfig {
   appId: string;
   appSecret: string;
-  redirectUri: string;
+  /** Optional fixed redirect URI (Settings or META_REDIRECT_URI). Usually null: it is detected per request. */
+  fixedRedirectUri: string | null;
   graphVersion: string;
   source: 'settings' | 'environment';
 }
 
 const stored = () => (store.c.settings.get(META_APP_SETTING)?.value as StoredMetaApp | undefined) ?? null;
-export const defaultRedirectUri = () => `${env.CLIENT_ORIGIN.replace(/\/$/, '')}/api/meta/oauth/callback`;
+
+const hostOf = (uri: string) => {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The redirect URI to use for a request: a fixed one when an admin set it (Settings, then
+ * META_REDIRECT_URI), otherwise the one detected from the request's own address.
+ * A fixed localhost URI is never used when the app is reached on a public domain — older
+ * versions pre-filled the Settings form with a localhost default, which would break production.
+ */
+export function resolveRedirectUri(cfg: Pick<MetaAppConfig, 'fixedRedirectUri'>, detected: string): { uri: string; source: 'detected' | 'fixed'; ignoredFixed: string | null } {
+  const fixed = cfg.fixedRedirectUri;
+  if (!fixed) return { uri: detected, source: 'detected', ignoredFixed: null };
+  if (isLoopbackHost(hostOf(fixed)) && !isLoopbackHost(hostOf(detected))) return { uri: detected, source: 'detected', ignoredFixed: fixed };
+  return { uri: fixed, source: 'fixed', ignoredFixed: null };
+}
 
 export function graphVersion(): string {
   return stored()?.graphVersion || env.META_GRAPH_VERSION;
@@ -50,26 +72,30 @@ export function metaAppConfig(): MetaAppConfig | null {
   if (s?.appId) {
     const secret = metaAppSecret();
     if (!secret) return null;
-    return { appId: s.appId, appSecret: secret, redirectUri: s.redirectUri || defaultRedirectUri(), graphVersion: graphVersion(), source: 'settings' };
+    return { appId: s.appId, appSecret: secret, fixedRedirectUri: s.redirectUri || null, graphVersion: graphVersion(), source: 'settings' };
   }
-  if (env.META_APP_ID && env.META_APP_SECRET && env.META_REDIRECT_URI) {
-    return { appId: env.META_APP_ID, appSecret: env.META_APP_SECRET, redirectUri: env.META_REDIRECT_URI, graphVersion: graphVersion(), source: 'environment' };
+  if (env.META_APP_ID && env.META_APP_SECRET) {
+    return { appId: env.META_APP_ID, appSecret: env.META_APP_SECRET, fixedRedirectUri: env.META_REDIRECT_URI ?? null, graphVersion: graphVersion(), source: 'environment' };
   }
   return null;
 }
 
-export function metaAppPublicConfig(): MetaAppPublicConfig {
+/** Settings as an admin may see them (never the secret), with the redirect URI for this request. */
+export function metaAppPublicConfig(detected: string): MetaAppPublicConfig {
   const s = stored();
-  if (s?.appId) {
-    return { appId: s.appId, hasAppSecret: Boolean(s.appSecretCiphertext), redirectUri: s.redirectUri || defaultRedirectUri(), defaultRedirectUri: defaultRedirectUri(), graphVersion: graphVersion(), source: 'settings' };
-  }
+  const fromSettings = Boolean(s?.appId);
+  const fixedRedirectUri = fromSettings ? s!.redirectUri || null : (env.META_REDIRECT_URI ?? null);
+  const r = resolveRedirectUri({ fixedRedirectUri }, detected);
   return {
-    appId: env.META_APP_ID ?? null,
-    hasAppSecret: Boolean(env.META_APP_SECRET),
-    redirectUri: env.META_REDIRECT_URI ?? null,
-    defaultRedirectUri: defaultRedirectUri(),
+    appId: fromSettings ? s!.appId : (env.META_APP_ID ?? null),
+    hasAppSecret: fromSettings ? Boolean(s!.appSecretCiphertext) : Boolean(env.META_APP_SECRET),
+    redirectUri: r.uri,
+    redirectUriSource: r.source === 'detected' ? 'detected' : fromSettings ? 'settings' : 'environment',
+    detectedRedirectUri: detected,
+    fixedRedirectUri: fromSettings ? s!.redirectUri || null : null,
+    ignoredFixedRedirectUri: r.ignoredFixed,
     graphVersion: graphVersion(),
-    source: env.META_APP_ID ? 'environment' : 'none',
+    source: fromSettings ? 'settings' : env.META_APP_ID ? 'environment' : 'none',
   };
 }
 
@@ -77,6 +103,7 @@ export function metaAppPublicConfig(): MetaAppPublicConfig {
 export async function saveMetaAppConfig(
   input: { appId: string; appSecret?: string | null; redirectUri?: string | null; graphVersion?: string | null },
   userId: string,
+  detected: string,
 ): Promise<MetaAppPublicConfig> {
   const prev = stored();
   const value: StoredMetaApp = {
@@ -86,5 +113,5 @@ export async function saveMetaAppConfig(
     graphVersion: input.graphVersion || null,
   };
   await store.c.settings.put({ id: META_APP_SETTING, value, updatedAt: new Date().toISOString(), updatedBy: userId });
-  return metaAppPublicConfig();
+  return metaAppPublicConfig(detected);
 }

@@ -100,6 +100,8 @@ export function rateCampaign(s: CampaignSnapshot, objective: ObjectiveLabel, per
   const rule = objective === 'Other' ? undefined : RULES.get(objective);
   const spend = spendOf(s.insights7d);
   if (!rule) return notRated('This objective has no main metric in the SOP');
+  // Meta refused insights for the account: performance is unknown, not zero.
+  if (s.insightsUnavailable) return notRated('Not checkable: Meta did not allow reading performance insights for this ad account');
   if (!s.insights7d || spend <= 0) return notRated('No spend in the last 7 days');
   // Cost targets are in rupees; ROAS is currency-neutral.
   const isInr = s.account.currency === 'INR';

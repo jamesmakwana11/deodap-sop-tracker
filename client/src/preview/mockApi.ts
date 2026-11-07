@@ -113,7 +113,16 @@ async function handle(method: string, path: string, body: Record<string, unknown
   if (p === '/meta/status') {
     return json({
       ...data.meta,
-      app: data.meta.app ?? { appId: null, hasAppSecret: false, redirectUri: null, defaultRedirectUri: 'http://localhost:5173/api/meta/oauth/callback', graphVersion: data.meta.graphVersion, source: 'none' },
+      // The redirect URI is worked out from wherever this page is open, as the server does.
+      app: {
+        ...(data.meta.app ?? { appId: null, hasAppSecret: false, fixedRedirectUri: null, source: 'none' }),
+        redirectUri: `${location.origin}/api/meta/oauth/callback`,
+        redirectUriSource: 'detected',
+        detectedRedirectUri: `${location.origin}/api/meta/oauth/callback`,
+        fixedRedirectUri: null,
+        ignoredFixedRedirectUri: null,
+        graphVersion: data.meta.graphVersion,
+      },
       encryptionKey: data.meta.encryptionKey ?? 'key-file',
     });
   }

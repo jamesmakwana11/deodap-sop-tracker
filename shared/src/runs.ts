@@ -5,6 +5,8 @@ export interface RunAccountResult {
   metaAccountId: string;
   status: 'succeeded' | 'failed';
   error: string | null;
+  /** What Meta did not allow reading although the account was audited (e.g. insights). */
+  notes: string[];
 }
 
 export interface RunTotals {

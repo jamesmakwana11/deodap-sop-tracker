@@ -723,8 +723,11 @@ const builders: Record<ExportDatasetId, Builder> = {
         { key: 'metaAccountId', header: 'Account ID', width: 18 },
         { key: 'status', header: 'Result', width: 10 },
         { key: 'error', header: 'Error', width: 40 },
+        { key: 'notes', header: 'Not readable', width: 40 },
       ],
-      runs.flatMap((r) => r.accounts.map((a) => ({ id: r.id, startedAt: r.startedAt, account: a.name, metaAccountId: a.metaAccountId, status: a.status, error: a.error }))),
+      runs.flatMap((r) =>
+        r.accounts.map((a) => ({ id: r.id, startedAt: r.startedAt, account: a.name, metaAccountId: a.metaAccountId, status: a.status, error: a.error, notes: a.notes.join(' ') || null })),
+      ),
     );
     const range = p.scope === 'all' ? 'All audits (date range not applied)' : from || to ? `Audits started ${from ? `from ${formatDate(from)}` : ''}${from && to ? ' ' : ''}${to ? `to ${formatDate(to)}` : ''} (dates in UTC)` : 'All audits';
     return {

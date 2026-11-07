@@ -267,6 +267,9 @@ export function HistoryPage() {
                               <div key={a.metaAccountId} className={a.status === 'failed' ? 'text-bad' : 'text-muted'}>
                                 {a.name}
                                 {a.status === 'failed' ? ' — failed' : ''}
+                                {a.notes.map((n) => (
+                                  <div key={n} className="max-w-[340px] text-[12px] text-avg">{n}</div>
+                                ))}
                               </div>
                             ))}
                           </td>

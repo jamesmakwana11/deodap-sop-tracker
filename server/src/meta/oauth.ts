@@ -13,10 +13,11 @@ export function requireMetaAppConfig(): MetaAppConfig {
   return cfg;
 }
 
-export function buildAuthorizeUrl(cfg: MetaAppConfig, state: string): string {
+/** `redirectUri` must be stored with the state and passed unchanged to the code exchange. */
+export function buildAuthorizeUrl(cfg: MetaAppConfig, state: string, redirectUri: string): string {
   const url = new URL(`https://www.facebook.com/${cfg.graphVersion}/dialog/oauth`);
   url.searchParams.set('client_id', cfg.appId);
-  url.searchParams.set('redirect_uri', cfg.redirectUri);
+  url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('state', state);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', META_SCOPES.join(','));
@@ -34,13 +35,16 @@ interface TokenResponse {
   expires_in?: number;
 }
 
-/** code → short-lived user token → long-lived (~60 day) user token. */
-export async function exchangeCodeForLongLivedToken(cfg: MetaAppConfig, code: string): Promise<{ token: string; expiresAt: Date | null }> {
+/**
+ * code → short-lived user token → long-lived (~60 day) user token. Meta requires `redirectUri`
+ * to be exactly the one sent to the login dialog.
+ */
+export async function exchangeCodeForLongLivedToken(cfg: MetaAppConfig, code: string, redirectUri: string): Promise<{ token: string; expiresAt: Date | null }> {
   const client = appClient(cfg);
   const short = await client.get<TokenResponse>('oauth/access_token', {
     client_id: cfg.appId,
     client_secret: cfg.appSecret,
-    redirect_uri: cfg.redirectUri,
+    redirect_uri: redirectUri,
     code,
   });
   const long = await client.get<TokenResponse>('oauth/access_token', {

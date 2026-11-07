@@ -99,6 +99,39 @@ const happyMeta: GraphHandler = (r) => {
 };
 
 describe('Meta OAuth', () => {
+  it('detects the redirect URI from the domain in use and reuses it exactly for the token exchange', async () => {
+    const f = useGraph(happyMeta);
+    const { agent } = await signedIn(app, 'admin');
+    const start = await agent.get('/api/meta/oauth/start').set('Host', 'sop.deodap.com');
+    const authUrl = new URL(start.body.url);
+    expect(authUrl.searchParams.get('redirect_uri')).toBe('http://sop.deodap.com/api/meta/oauth/callback'); // https in production
+    const state = authUrl.searchParams.get('state')!;
+
+    // Even if the callback arrives with another Host header, the saved URI is used.
+    await agent.get(`/api/meta/oauth/callback?code=abc&state=${state}`).set('Host', 'other.example.com');
+    const exchange = f.requests.find((r) => r.path === 'oauth/access_token' && r.params.get('code'));
+    expect(exchange?.params.get('redirect_uri')).toBe('http://sop.deodap.com/api/meta/oauth/callback');
+    expect(store.c.oauthStates.all()).toHaveLength(0);
+  });
+
+  it('shows the detected redirect URI to admins and validates a fixed one', async () => {
+    const { agent } = await signedIn(app, 'admin');
+    const app1 = (await agent.get('/api/meta/app').set('Host', 'audit.deodap.in')).body.app;
+    expect(app1).toMatchObject({
+      redirectUri: 'http://audit.deodap.in/api/meta/oauth/callback',
+      detectedRedirectUri: 'http://audit.deodap.in/api/meta/oauth/callback',
+      redirectUriSource: 'detected',
+      fixedRedirectUri: null,
+    });
+    const put = (redirectUri: string) =>
+      agent.put('/api/meta/app').set(CSRF).send({ appId: '1234567890', appSecret: 'a'.repeat(32), redirectUri });
+    expect((await put('https://sop.deodap.com/wrong/path')).status).toBe(400);
+    expect((await put('http://sop.deodap.com/api/meta/oauth/callback')).status).toBe(400);
+    const ok = await put('');
+    expect(ok.status).toBe(200);
+    expect(ok.body.app.redirectUriSource).toBe('detected');
+  });
+
   it('connects through the full code → long-lived token flow', async () => {
     const f = useGraph(happyMeta);
     const { agent } = await signedIn(app, 'admin');
@@ -108,10 +141,18 @@ describe('Meta OAuth', () => {
     expect(authUrl.host).toBe('www.facebook.com');
     expect(authUrl.searchParams.get('scope')).toBe('ads_read');
     const state = authUrl.searchParams.get('state')!;
+    // Detected from the request's own address (supertest calls 127.0.0.1:<port>), not configured.
+    const redirectUri = authUrl.searchParams.get('redirect_uri')!;
+    expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/api\/meta\/oauth\/callback$/);
+    expect(start.body.redirectUri).toBe(redirectUri);
 
     const cb = await agent.get(`/api/meta/oauth/callback?code=abc&state=${state}`);
     expect(cb.status).toBe(302);
-    expect(cb.headers.location).toBe('http://localhost:5173/settings?meta=connected&accounts=2');
+    // Relative, so the browser stays on the domain it came from.
+    expect(cb.headers.location).toMatch(/^\/settings\?meta=connected&accounts=2(&|$)/);
+    // The code exchange sent exactly the redirect URI the login dialog received.
+    const exchange = f.requests.find((r) => r.path === 'oauth/access_token' && r.params.get('code'));
+    expect(exchange?.params.get('redirect_uri')).toBe(redirectUri);
 
     // stored encrypted, never as plain text
     const conn = store.c.metaConnections.all()[0]!;
