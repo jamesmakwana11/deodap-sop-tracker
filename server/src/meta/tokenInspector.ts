@@ -43,11 +43,11 @@ const toDate = (unix: number | undefined) => (unix && unix > 0 ? new Date(unix *
 
 /** A client for the token itself, with or without the configured app's secret proof. */
 export function tokenClient(token: string, withProof: boolean): GraphClient {
-  return new GraphClient({ accessToken: token, appSecret: withProof ? metaAppSecret() : undefined, version: graphVersion(), maxRetries: 1 });
+  return new GraphClient({ accessToken: token, appSecret: withProof ? metaAppSecret() : undefined, version: graphVersion(), maxRetries: 1, rateLimitRetries: 1 });
 }
 
 function appClient(cfg: MetaAppConfig): GraphClient {
-  return new GraphClient({ accessToken: `${cfg.appId}|${cfg.appSecret}`, version: cfg.graphVersion, maxRetries: 1 });
+  return new GraphClient({ accessToken: `${cfg.appId}|${cfg.appSecret}`, version: cfg.graphVersion, maxRetries: 1, rateLimitRetries: 1 });
 }
 
 async function readDebug(token: string, cfg: MetaAppConfig | null): Promise<{ data: DebugData; method: TokenCheckInfo['method'] } | null> {

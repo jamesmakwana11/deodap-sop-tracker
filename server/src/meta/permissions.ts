@@ -67,7 +67,7 @@ export function explainMetaError(err: unknown, ctx: { accountId?: string } = {})
   if (err.code === 200 || err.code === 10 || (err.code !== undefined && err.code > 200 && err.code < 300)) {
     return `Meta refused access to${where || ' this data'}: ${m}. Check that the token has ads_read and that its person or system user is assigned to the ad account in Business Settings.${ref}`;
   }
-  if (err.isRateLimit) return `Meta's rate limit was reached; try again in a while. Meta said: ${m}${ref}`;
+  if (err.isRateLimit) return `Meta's rate limit was reached (the tracker waited and retried). Try again in 15–30 minutes. Meta said: ${m}${ref}`;
   if (err.code === 368) return `Meta has temporarily blocked this account from this action: ${m}${ref}`;
   if (err.status >= 500 || err.code === 1 || err.code === 2) return `Meta had a temporary problem; try again. Meta said: ${m}${ref}`;
   return `${m}${ref}`;

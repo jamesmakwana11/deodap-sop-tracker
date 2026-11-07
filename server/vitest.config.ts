@@ -15,5 +15,6 @@ export default defineConfig({
       SYNC_TIME_IST: '',
     },
     fileParallelism: false,
+    setupFiles: ['test/setup.ts'],
   },
 });

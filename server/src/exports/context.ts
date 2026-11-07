@@ -31,6 +31,7 @@ const Query = z.object({
   objective: z.enum([...OBJECTIVES, 'Other'] as [string, ...string[]]).optional(),
   sopStatus: z.enum(SOP_STATUSES as [string, ...string[]]).optional(),
   search: z.string().max(200).optional(),
+  activity: z.enum(['all']).optional(),
   sort: z.enum(Object.keys(SORT_OPTIONS) as [SortKey, ...SortKey[]]).default('spend_desc'),
   campaignId: id.optional(),
   from: date.optional(),
@@ -43,14 +44,14 @@ export type ExportParams = z.infer<typeof Query> & { filters: TrackerFilters };
 
 export function parseExportParams(query: unknown): ExportParams {
   const q = parse(Query, query);
-  const filters = { accountId: q.accountId, rating: q.rating, objective: q.objective, sopStatus: q.sopStatus, search: q.search } as TrackerFilters;
+  const filters = { accountId: q.accountId, rating: q.rating, objective: q.objective, sopStatus: q.sopStatus, search: q.search, activity: q.activity } as TrackerFilters;
   return { ...q, filters };
 }
 
 /** The query values worth keeping with a saved report (no empty ones). */
 export function paramsForRecord(p: ExportParams): Record<string, string> {
   const keep: Record<string, string> = {};
-  for (const k of ['runId', 'scope', 'accountId', 'rating', 'objective', 'sopStatus', 'search', 'sort', 'campaignId', 'from', 'to', 'runA', 'runB'] as const) {
+  for (const k of ['runId', 'scope', 'accountId', 'rating', 'objective', 'sopStatus', 'search', 'activity', 'sort', 'campaignId', 'from', 'to', 'runA', 'runB'] as const) {
     const v = p[k];
     if (v !== undefined && v !== '') keep[k] = String(v);
   }
@@ -79,7 +80,8 @@ export function describeFilters(f: TrackerFilters, all: CampaignAudit[], shown: 
   if (f.objective) parts.push(`objective ${f.objective}`);
   if (f.sopStatus) parts.push(`SOP status ${f.sopStatus.toLowerCase().replace(/_/g, ' ')}`);
   if (f.search) parts.push(`name contains “${f.search}”`);
-  return parts.length ? `Filtered to ${parts.join(', ')} (${shown} of ${all.length} campaigns)` : `All ${all.length} campaigns`;
+  const which = f.activity === 'all' ? 'campaigns with status Active (incl. ones with inactive ad sets or ads)' : 'Active campaigns (campaign, ad sets and ads all Active)';
+  return parts.length ? `${which}, filtered to ${parts.join(', ')} (${shown} of ${all.length} audited)` : `${which}: ${shown} of ${all.length} audited`;
 }
 
 export async function loadRunContext(p: ExportParams): Promise<RunContext> {

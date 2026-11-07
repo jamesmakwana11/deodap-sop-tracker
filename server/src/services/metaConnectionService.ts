@@ -30,12 +30,23 @@ const ACCOUNT_FIELDS = 'id,account_id,name,currency,timezone_name,account_status
 /** Test-reading campaigns and insights takes two calls per account; beyond this, the next sync shows access. */
 const MAX_ACCESS_CHECKS = 50;
 
-export function clientForToken(token: string, useAppSecretProof = true): GraphClient {
-  return new GraphClient({ accessToken: token, appSecret: useAppSecretProof ? metaAppSecret() : undefined, version: graphVersion() });
+/**
+ * "background" (syncs) waits out Meta rate limits with long back-off; "interactive" (someone is
+ * waiting for the page) retries a rate limit once and then reports it.
+ */
+export type ClientUse = 'background' | 'interactive';
+
+export function clientForToken(token: string, useAppSecretProof = true, use: ClientUse = 'interactive'): GraphClient {
+  return new GraphClient({
+    accessToken: token,
+    appSecret: useAppSecretProof ? metaAppSecret() : undefined,
+    version: graphVersion(),
+    ...(use === 'interactive' ? { rateLimitRetries: 1 } : {}),
+  });
 }
 
 /** A Graph client using the stored (decrypted) token of a connection. */
-export async function clientForConnection(connectionId: string): Promise<GraphClient> {
+export async function clientForConnection(connectionId: string, use: ClientUse = 'interactive'): Promise<GraphClient> {
   const conn = await findConnectionSecret(connectionId);
   if (!conn) throw new HttpError(409, 'The Meta connection for this account was removed. Reconnect Meta in Settings.');
   if (conn.status === 'invalid') {
@@ -46,7 +57,7 @@ export async function clientForConnection(connectionId: string): Promise<GraphCl
     throw new HttpError(409, 'The Meta access token has expired. Reconnect Meta in Settings.');
   }
   // Connections saved before token checks existed have no flag and keep the earlier behaviour.
-  return clientForToken(decryptSecret(conn.tokenCiphertext), conn.useAppSecretProof ?? true);
+  return clientForToken(decryptSecret(conn.tokenCiphertext), conn.useAppSecretProof ?? true, use);
 }
 
 /** "act_123", "123" or "act 123" → "123". */

@@ -39,6 +39,7 @@ const Query = z.object({
   objective: z.enum([...OBJECTIVES, 'Other'] as [string, ...string[]]).optional(),
   sopStatus: z.enum(SOP_STATUSES as [string, ...string[]]).optional(),
   search: z.string().max(200).optional(),
+  activity: z.enum(['all']).optional(),
   sort: z.enum(Object.keys(SORT_OPTIONS) as [SortKey, ...SortKey[]]).default('spend_desc'),
 });
 
@@ -48,7 +49,7 @@ export async function loadReportData(runIdParam: string, query: unknown, generat
   if (!run) throw notFoundError('No completed audit run to report on.');
 
   const all = await findCampaignAudits(run.id);
-  const filters = { accountId: q.accountId, rating: q.rating, objective: q.objective, sopStatus: q.sopStatus, search: q.search } as TrackerFilters;
+  const filters = { accountId: q.accountId, rating: q.rating, objective: q.objective, sopStatus: q.sopStatus, search: q.search, activity: q.activity } as TrackerFilters;
   const campaigns = sortCampaigns(filterCampaigns(all, filters), q.sort);
 
   const parts: string[] = [];
@@ -71,7 +72,7 @@ export async function loadReportData(runIdParam: string, query: unknown, generat
     campaigns,
     summary: buildDashboardSummary(campaigns),
     filters,
-    filterDescription: parts.length ? `Filtered to ${parts.join(', ')} (${campaigns.length} of ${all.length} campaigns)` : `All ${all.length} active campaigns`,
+    filterDescription: `${filters.activity === 'all' ? 'Campaigns with status Active (incl. ones with inactive ad sets or ads)' : 'Active campaigns (campaign, ad sets and ads all Active)'}${parts.length ? `, filtered to ${parts.join(', ')}` : ''}: ${campaigns.length} of ${all.length} audited`,
     sort: q.sort,
     manual,
     generatedAt: new Date(),

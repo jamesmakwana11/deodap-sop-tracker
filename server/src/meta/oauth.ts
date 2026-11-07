@@ -26,7 +26,7 @@ export function buildAuthorizeUrl(cfg: MetaAppConfig, state: string, redirectUri
 
 /** App-level client (app access token) for oauth/access_token and debug_token. */
 function appClient(cfg: MetaAppConfig): GraphClient {
-  return new GraphClient({ accessToken: `${cfg.appId}|${cfg.appSecret}`, version: cfg.graphVersion, maxRetries: 1 });
+  return new GraphClient({ accessToken: `${cfg.appId}|${cfg.appSecret}`, version: cfg.graphVersion, maxRetries: 1, rateLimitRetries: 1 });
 }
 
 interface TokenResponse {

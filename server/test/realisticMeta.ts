@@ -43,12 +43,13 @@ const bulkAccount = (i: number) => ({ id: `act_${2000 + i}`, account_id: String(
 const ACCOUNT_NAMES: Record<string, string> = { '1001': 'Store One', '100003': 'Store Three (no insights)', '100004': 'Store Four (partner Business)' };
 
 /** Campaign data for the accounts beyond 1001 (which comes from fakeMetaWorld). */
-function extraAccountData(act: string, edge: string): unknown | undefined {
+function extraAccountData(act: string, edge: string, r: GraphRequest): unknown | undefined {
   if (act !== '100003' && act !== '100004') return undefined;
   const c = `${act}-c`;
   if (edge === 'campaigns')
     return { data: [{ id: c, name: `${act} | Static | Sales | 01.10.2026`, objective: 'OUTCOME_SALES', buying_type: 'AUCTION', bid_strategy: 'LOWEST_COST_WITHOUT_CAP', daily_budget: '100000', effective_status: 'ACTIVE', start_time: '2026-10-01T10:00:00+0530' }] };
-  if (edge === 'adsets') return { data: [{ id: `${act}-s`, name: 'S', campaign_id: c, is_dynamic_creative: false, targeting: { publisher_platforms: ['facebook', 'instagram'], geo_locations: { countries: ['IN'] } } }] };
+  if (edge === 'adsets') return { data: [{ id: `${act}-s`, name: 'S', campaign_id: c, effective_status: 'ACTIVE', is_dynamic_creative: false, targeting: { publisher_platforms: ['facebook', 'instagram'], geo_locations: { countries: ['IN'] } } }] };
+  if (edge === 'ads' && (r.params.get('fields') ?? '').startsWith('id,campaign_id,adset_id')) return { data: [] };
   if (edge === 'ads') return { data: [{ id: `${act}-a`, name: 'A', adset_id: `${act}-s`, campaign_id: c, effective_status: 'ACTIVE', creative: { id: 'cr', body: 'Buy now', title: 'Deal', call_to_action_type: 'SHOP_NOW' } }] };
   if (edge === 'insights') return { data: [{ campaign_id: c, spend: '20000', action_values: [{ action_type: 'omni_purchase', value: '100000' }] }] };
   return undefined;
@@ -115,7 +116,7 @@ export function realisticMeta(tokens: Record<string, FakeToken>, opts: { bulkAcc
       // Access test-reads (no status filter, limit 1) get a minimal answer.
       if (edge === 'campaigns' && !r.params.has('effective_status')) return { body: { data: [{ id: 'probe' }] } };
       if (edge === 'insights' && !r.params.has('level')) return { body: { data: [] } };
-      const extra = extraAccountData(id!, edge);
+      const extra = extraAccountData(id!, edge, r);
       if (extra) return { body: extra };
       return world({ ...r, path: `act_1001/${edge}` }) ?? { body: { data: [] } };
     }

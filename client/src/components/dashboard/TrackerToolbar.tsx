@@ -25,6 +25,7 @@ export function toSearchParams(q: TrackerQuery, extra: Record<string, string | u
     ['objective', q.objective],
     ['sopStatus', q.sopStatus],
     ['search', q.search?.trim() || undefined],
+    ['activity', q.activity],
     ['sort', q.sort === 'spend_desc' ? undefined : q.sort],
     ...Object.entries(extra),
   ];
@@ -60,6 +61,12 @@ export function TrackerToolbar({
           onChange={(e) => set('search', e.target.value)}
           className="w-56"
         />
+      </Field>
+      <Field label="Show">
+        <Select value={query.activity ?? ''} onChange={(e) => set('activity', e.target.value as TrackerQuery['activity'])}>
+          <option value="">Active campaigns</option>
+          <option value="all">All with campaign status Active</option>
+        </Select>
       </Field>
       <Field label="Account">
         <Select value={query.accountId ?? ''} onChange={(e) => set('accountId', e.target.value)}>

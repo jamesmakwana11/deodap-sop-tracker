@@ -6,6 +6,7 @@ import { useApi } from '../../hooks/useApi';
 import { formatRelative } from '../../lib/format';
 import { useSync } from '../../sync/SyncContext';
 import { Alert, Button } from '../ui/controls';
+import { SyncPanel } from './SyncPanel';
 
 const link = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-3 py-1.5 text-[14px] font-semibold ${isActive ? 'bg-head text-navy' : 'text-muted hover:text-navy'}`;
@@ -21,7 +22,7 @@ function SyncControl() {
     <div className="flex items-center gap-3">
       <span className="hidden text-[13px] text-muted md:inline" aria-live="polite">
         {running
-          ? 'Refreshing from Meta…'
+          ? `Loading Meta data${status?.progress?.accountIndex ? ` (account ${status.progress.accountIndex} of ${status.progress.accountCount})` : ''}`
           : last
             ? `Last Meta refresh ${formatRelative(last.finishedAt ?? last.startedAt)}${last.status === 'succeeded' ? '' : ` (${last.status})`}`
             : 'No Meta refresh yet'}
@@ -32,8 +33,8 @@ function SyncControl() {
         </Button>
       )}
       {error && (
-        <div className="fixed right-4 bottom-4 z-50 max-w-md" onClick={clearError}>
-          <Alert>{error}</Alert>
+        <div className="fixed top-20 right-4 z-50 max-w-md cursor-pointer" onClick={clearError} title="Click to dismiss">
+          <Alert>Could not start the Meta refresh: {error}</Alert>
         </div>
       )}
     </div>
@@ -111,6 +112,7 @@ export function AppShell() {
       </nav>
       <StorageBanner />
       <Outlet />
+      <SyncPanel />
     </div>
   );
 }

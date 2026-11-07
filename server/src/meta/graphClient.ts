@@ -11,6 +11,7 @@ type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<s
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  headers?: { get(name: string): string | null };
 }>;
 
 let fetchImpl: FetchLike = (url, init) => fetch(url, { ...init, method: 'GET' });
@@ -20,7 +21,74 @@ export function setGraphFetch(fn: FetchLike | null): void {
   fetchImpl = fn ?? ((url, init) => fetch(url, { ...init, method: 'GET' }));
 }
 
+// ── Waiting (rate limits) ────────────────────────────────────────────────
+
+let sleepImpl = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Tests replace the wait so back-off can be checked without real delays. */
+export function setGraphSleep(fn: ((ms: number) => Promise<void>) | null): void {
+  sleepImpl = fn ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+}
+
+export interface GraphWait {
+  ms: number;
+  /** "rate_limit": Meta refused with a rate-limit error; "usage": slowing down before Meta's limit. */
+  reason: 'rate_limit' | 'usage';
+  attempt: number;
+  maxAttempts: number;
+}
+const waitListeners = new Set<(w: GraphWait) => void>();
+/** The sync listens to show "waiting for Meta's rate limit" as progress. */
+export function onGraphWait(fn: (w: GraphWait) => void): () => void {
+  waitListeners.add(fn);
+  return () => waitListeners.delete(fn);
+}
+
+/** Rate-limit back-off: 15 s, 30 s, 1 min, 2 min, 4 min, 5 min (or Meta's own estimate, if longer). */
+export const RATE_LIMIT_RETRIES = 6;
+const RATE_LIMIT_BASE_MS = 15_000;
+const RATE_LIMIT_MAX_WAIT_MS = 5 * 60_000;
+
+interface Usage {
+  /** Highest usage percentage Meta reported for this token / ad account / app. */
+  pct: number;
+  /** Meta's estimate until access is regained (ms), when given. */
+  regainMs: number;
+}
+
+/** Reads Meta's usage headers (X-Business-Use-Case-Usage, X-Ad-Account-Usage, X-App-Usage). */
+export function usageFromHeaders(headers?: { get(name: string): string | null }): Usage | null {
+  if (!headers) return null;
+  let pct = 0;
+  let regainMs = 0;
+  let seen = false;
+  const parse = (name: string) => {
+    const raw = headers.get(name);
+    if (!raw) return null;
+    try {
+      seen = true;
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  };
+  const take = (o: Record<string, unknown>) => {
+    for (const k of ['call_count', 'total_cputime', 'total_time', 'acc_id_util_pct']) if (typeof o[k] === 'number') pct = Math.max(pct, o[k] as number);
+    if (typeof o.estimated_time_to_regain_access === 'number') regainMs = Math.max(regainMs, (o.estimated_time_to_regain_access as number) * 60_000);
+    if (typeof o.reset_time_duration === 'number' && (o.acc_id_util_pct as number) >= 90) regainMs = Math.max(regainMs, (o.reset_time_duration as number) * 1000);
+  };
+  const buc = parse('x-business-use-case-usage');
+  if (buc && typeof buc === 'object') for (const entries of Object.values(buc as Record<string, unknown>)) if (Array.isArray(entries)) entries.forEach((e) => e && typeof e === 'object' && take(e as Record<string, unknown>));
+  for (const name of ['x-ad-account-usage', 'x-app-usage']) {
+    const o = parse(name);
+    if (o && typeof o === 'object') take(o as Record<string, unknown>);
+  }
+  return seen ? { pct, regainMs } : null;
+}
+
 export class MetaApiError extends Error {
+  /** Meta's estimate until access is regained, from the usage headers of the failed response (ms). */
+  regainMs = 0;
+
   constructor(
     message: string,
     readonly status: number,
@@ -61,6 +129,8 @@ export interface GraphClientOptions {
   timeoutMs?: number;
   /** Base delay for backoff; tests set 0. */
   retryDelayMs?: number;
+  /** Retries after a Meta rate-limit error (default 6, for background syncs; interactive calls use fewer). */
+  rateLimitRetries?: number;
 }
 
 interface Paged<T> {
@@ -68,10 +138,10 @@ interface Paged<T> {
   paging?: { next?: string };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export class GraphClient {
   private readonly proof: string | undefined;
+  /** Last usage Meta reported to this client; used to slow down before hitting the limit. */
+  private usage: Usage | null = null;
 
   constructor(private readonly opts: GraphClientOptions) {
     this.proof = opts.appSecret
@@ -118,16 +188,46 @@ export class GraphClient {
 
     const maxRetries = this.opts.maxRetries ?? 4;
     const baseDelay = this.opts.retryDelayMs ?? 1000;
-    for (let attempt = 0; ; attempt++) {
+    const rateLimitRetries = this.opts.rateLimitRetries ?? RATE_LIMIT_RETRIES;
+    let rateLimited = 0;
+    let otherFailures = 0;
+    for (;;) {
+      await this.throttle();
       try {
         return await this.once<T>(url.toString());
       } catch (err) {
-        const retriable = err instanceof MetaApiError ? err.isTransient : true; // network/timeouts
-        if (!retriable || attempt >= maxRetries) throw err;
-        const delay = Math.min(baseDelay * 2 ** attempt, 60_000) * (err instanceof MetaApiError && err.isRateLimit ? 4 : 1);
-        await sleep(delay);
+        if (err instanceof MetaApiError && err.isRateLimit) {
+          // Exponential back-off for rate limits, following Meta's own estimate when it is longer.
+          rateLimited++;
+          if (rateLimited > rateLimitRetries) {
+            if (rateLimitRetries > 0) err.message = `${err.message} (still rate limited after ${rateLimitRetries} retries)`;
+            throw err;
+          }
+          const ms = Math.min(Math.max(RATE_LIMIT_BASE_MS * 2 ** (rateLimited - 1), err.regainMs), RATE_LIMIT_MAX_WAIT_MS);
+          this.usage = null; // this back-off already covers the usage Meta reported
+          await this.wait({ ms, reason: 'rate_limit', attempt: rateLimited, maxAttempts: rateLimitRetries });
+          continue;
+        }
+        const retriable = err instanceof MetaApiError ? err.isTransient : true; // network/timeouts, 5xx
+        if (!retriable || otherFailures >= maxRetries) throw err;
+        await sleepImpl(Math.min(baseDelay * 2 ** otherFailures, 60_000));
+        otherFailures++;
       }
     }
+  }
+
+  private async wait(w: GraphWait): Promise<void> {
+    for (const fn of waitListeners) fn(w);
+    await sleepImpl(w.ms);
+  }
+
+  /** Before each call: pause when Meta reports usage near its limit, so fewer calls are refused. */
+  private async throttle(): Promise<void> {
+    const u = this.usage;
+    if (!u || u.pct < 75) return;
+    const ms = u.pct >= 90 ? Math.min(Math.max(u.regainMs, 10_000), 60_000) : 2_000;
+    this.usage = null; // re-evaluated from the next response
+    await this.wait({ ms, reason: 'usage', attempt: 0, maxAttempts: 0 });
   }
 
   private async once<T>(url: string): Promise<T> {
@@ -135,18 +235,21 @@ export class GraphClient {
       signal: AbortSignal.timeout(this.opts.timeoutMs ?? 60_000),
       headers: { Authorization: `Bearer ${this.opts.accessToken}` },
     });
+    this.usage = usageFromHeaders(res.headers) ?? this.usage;
     const body = (await res.json().catch(() => ({}))) as {
       error?: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string; error_user_msg?: string };
     };
     if (!res.ok || body.error) {
       const e = body.error ?? {};
-      throw new MetaApiError(
+      const err = new MetaApiError(
         e.error_user_msg || e.message || `Meta API returned HTTP ${res.status}`,
         res.status,
         e.code,
         e.error_subcode,
         e.fbtrace_id,
       );
+      err.regainMs = this.usage?.regainMs ?? 0;
+      throw err;
     }
     return body as T;
   }

@@ -7,6 +7,11 @@
 export const RECORDED_AT = new Date('2026-11-07T13:56:00+05:30');
 export const ACCOUNT_ID = '153787105';
 
+/** The 45 campaigns that were delivering (Ads Manager "Active"); their non-active children are listed below. */
+export const deliveringCampaignIds = new Set([
+  '52556907016553', '52556719787353', '52556716439353', '52556554944553', '52556543263153', '52556541866753', '52556497483753', '52556279785353', '52556279781953', '52556265132753', '52556200146353', '52556199318153', '52556001593953', '52555977305353', '52555952212553', '52555942822953', '52555935400953', '52555871283553', '52555702464353', '52555641024153', '52555372513153', '52555230370353', '52554993552953', '52554813156353', '52554074223953', '52554064907153', '52554064905353', '52553675486353', '52553032511353', '52552521885353', '52552335292553', '52552153042153', '52550903795953', '52548931105153', '52547333942753', '52547150943353', '52547111991953', '52545450632553', '52544214397153', '52541319869353', '52541293933553', '52533139984553', '52506198152353', '6984915634949', '6600673554549',
+]);
+
 /** 70 campaigns with effective_status ACTIVE. */
 export const activeCampaigns: { id: string; stop_time?: string }[] = [
   { id: '52556907016553', stop_time: '2026-12-07T02:46:59+0530' },
@@ -243,4 +248,74 @@ export const activeAds: { adset_id: string; campaign_id: string }[] = [
   { adset_id: '52556541866953', campaign_id: '52556541866753' },
   { adset_id: '52556265132953', campaign_id: '52556265132753' },
   { adset_id: '52553851363953', campaign_id: '52553851323353' },
+];
+
+/**
+ * Ad sets and ads under the 45 delivering campaigns whose effective_status was NOT ACTIVE
+ * (read with effective_status IN [paused, archived, deleted, in process, …]; no deleted ones existed).
+ */
+export const inactiveAdSetsOfDelivering: { id: string; campaign_id: string; effective_status: string }[] = [
+  { id: '52556205782153', campaign_id: '52556199318153', effective_status: 'PAUSED' },
+  { id: '52551032209153', campaign_id: '52544214397153', effective_status: 'PAUSED' },
+  { id: '52548935178953', campaign_id: '52548931105153', effective_status: 'PAUSED' },
+  { id: '52548934229153', campaign_id: '52548931105153', effective_status: 'PAUSED' },
+  { id: '52548933771953', campaign_id: '52548931105153', effective_status: 'PAUSED' },
+  { id: '52548932371553', campaign_id: '52548931105153', effective_status: 'PAUSED' },
+  { id: '52548931105353', campaign_id: '52548931105153', effective_status: 'PAUSED' },
+  { id: '52547150166553', campaign_id: '52547111991953', effective_status: 'PAUSED' },
+  { id: '52547125479353', campaign_id: '52547111991953', effective_status: 'PAUSED' },
+  { id: '52547125351353', campaign_id: '52547111991953', effective_status: 'PAUSED' },
+  { id: '52547125328153', campaign_id: '52547111991953', effective_status: 'PAUSED' },
+  { id: '52547111992153', campaign_id: '52547111991953', effective_status: 'PAUSED' },
+  { id: '52541319869553', campaign_id: '52541319869353', effective_status: 'PAUSED' },
+  { id: '52541300063953', campaign_id: '52541293933553', effective_status: 'PAUSED' },
+  { id: '52541293933753', campaign_id: '52541293933553', effective_status: 'PAUSED' },
+  { id: '52506207224953', campaign_id: '52506198152353', effective_status: 'PAUSED' },
+  { id: '52556209469153', campaign_id: '52556200146353', effective_status: 'ARCHIVED' },
+  { id: '52556209401753', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556199318353', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+];
+
+export const inactiveAdsOfDelivering: { id: string; campaign_id: string; effective_status: string }[] = [
+  { id: '52556528484153', campaign_id: '52556199318153', effective_status: 'ADSET_PAUSED' },
+  { id: '52556205782353', campaign_id: '52556199318153', effective_status: 'ADSET_PAUSED' },
+  { id: '52556205781953', campaign_id: '52556199318153', effective_status: 'ADSET_PAUSED' },
+  { id: '52547111992353', campaign_id: '52547111991953', effective_status: 'ADSET_PAUSED' },
+  { id: '52547125351153', campaign_id: '52547111991953', effective_status: 'ADSET_PAUSED' },
+  { id: '52547125327953', campaign_id: '52547111991953', effective_status: 'ADSET_PAUSED' },
+  { id: '52547125479153', campaign_id: '52547111991953', effective_status: 'ADSET_PAUSED' },
+  { id: '52547150166753', campaign_id: '52547111991953', effective_status: 'ADSET_PAUSED' },
+  { id: '52551032208953', campaign_id: '52544214397153', effective_status: 'ADSET_PAUSED' },
+  { id: '52548934229353', campaign_id: '52548931105153', effective_status: 'ADSET_PAUSED' },
+  { id: '52548935178753', campaign_id: '52548931105153', effective_status: 'ADSET_PAUSED' },
+  { id: '52548932371753', campaign_id: '52548931105153', effective_status: 'ADSET_PAUSED' },
+  { id: '52548931105553', campaign_id: '52548931105153', effective_status: 'ADSET_PAUSED' },
+  { id: '52548933772153', campaign_id: '52548931105153', effective_status: 'ADSET_PAUSED' },
+  { id: '52554994031353', campaign_id: '52554993552953', effective_status: 'IN_PROCESS' },
+  { id: '52553032511153', campaign_id: '52553032511353', effective_status: 'IN_PROCESS' },
+  { id: '52547125408953', campaign_id: '52547111991953', effective_status: 'PENDING_REVIEW' },
+  { id: '52544482884953', campaign_id: '52533139984553', effective_status: 'PAUSED' },
+  { id: '6962212099949', campaign_id: '6600673554549', effective_status: 'PAUSED' },
+  { id: '6603005810749', campaign_id: '6600673554549', effective_status: 'PAUSED' },
+  { id: '6962212100149', campaign_id: '6600673554549', effective_status: 'PAUSED' },
+  { id: '6603005806149', campaign_id: '6600673554549', effective_status: 'PAUSED' },
+  { id: '6962212099749', campaign_id: '6600673554549', effective_status: 'PAUSED' },
+  { id: '52541300063753', campaign_id: '52541293933553', effective_status: 'PAUSED' },
+  { id: '52541319869153', campaign_id: '52541319869353', effective_status: 'PAUSED' },
+  { id: '52541293933953', campaign_id: '52541293933553', effective_status: 'PAUSED' },
+  { id: '52506207224753', campaign_id: '52506198152353', effective_status: 'PAUSED' },
+  { id: '52556204183153', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556205782553', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556209402353', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556209402153', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556209401953', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556211831553', campaign_id: '52556200146353', effective_status: 'ARCHIVED' },
+  { id: '52556211300553', campaign_id: '52556200146353', effective_status: 'ARCHIVED' },
+  { id: '52556209469553', campaign_id: '52556200146353', effective_status: 'ARCHIVED' },
+  { id: '52556203323553', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556202188153', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '52556199318553', campaign_id: '52556199318153', effective_status: 'ARCHIVED' },
+  { id: '6850362347549', campaign_id: '6600673554549', effective_status: 'ARCHIVED' },
+  { id: '6600673634949', campaign_id: '6600673554549', effective_status: 'ARCHIVED' },
+  { id: '6600673554749', campaign_id: '6600673554549', effective_status: 'ARCHIVED' },
 ];

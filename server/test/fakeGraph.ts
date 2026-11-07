@@ -11,7 +11,7 @@ export interface GraphRequest {
   url: string;
 }
 
-export type GraphHandler = (req: GraphRequest) => { status?: number; body: unknown } | undefined;
+export type GraphHandler = (req: GraphRequest) => { status?: number; body: unknown; headers?: Record<string, string> } | undefined;
 
 export function installFakeGraph(handler: GraphHandler) {
   const requests: GraphRequest[] = [];
@@ -26,7 +26,8 @@ export function installFakeGraph(handler: GraphHandler) {
     requests.push(req);
     const res = handler(req) ?? { status: 404, body: { error: { message: `No fake for ${req.path}`, code: 803 } } };
     const status = res.status ?? 200;
-    return { ok: status < 400, status, json: async () => res.body };
+    const headers = Object.fromEntries(Object.entries(res.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+    return { ok: status < 400, status, json: async () => res.body, headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
   });
   return { requests, uninstall: () => setGraphFetch(null) };
 }

@@ -77,8 +77,14 @@ export function auditCampaigns(snapshots: CampaignSnapshot[], periodEnd: Date, n
       objectiveRaw: s.campaign.objective ?? 'UNKNOWN',
       objective: objectives[i]!,
       effectiveStatus: s.campaign.effective_status ?? null,
-      // Whether it is actually delivering (Ads Manager "Active"). Does not affect rating or SOP checks.
-      delivery: deliveryState(s.campaign, s.adSets, s.ads.filter((a) => (a.effective_status ?? 'ACTIVE') === 'ACTIVE'), now, s.adsKnown !== false),
+      // Active only when the campaign, ALL its ad sets and ALL its ads are ACTIVE. Does not affect rating or SOP checks.
+      delivery: deliveryState(
+        s.campaign,
+        s.allAdSets ?? s.adSets,
+        s.allAds ?? s.ads,
+        now,
+        s.childrenKnown ?? s.adsKnown !== false,
+      ),
       currency: s.account.currency,
       spend7d: spendOf(s.insights7d),
       mainMetric: r.metric,

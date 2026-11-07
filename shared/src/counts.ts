@@ -1,23 +1,41 @@
 /**
- * Campaign counts that reconcile with Meta Ads Manager.
- *
- * Meta's campaign `effective_status` ACTIVE only means the campaign itself is switched on. Ads
- * Manager's "Active" means it is actually delivering: switched on AND it has an active ad in an
- * active ad set that has not ended. A campaign can be ACTIVE in Meta yet show as "Ad sets
- * inactive", "Ads inactive", "Completed" or "Scheduled" in Ads Manager. The tracker audits every
- * campaign with Meta status ACTIVE (unchanged), and counts delivering ones separately.
+ * Campaign counts. A campaign is ACTIVE only when the campaign, every one of its ad sets and every
+ * one of its ads have Meta effective_status ACTIVE (and it has started and not ended). One paused,
+ * archived, deleted, in-review or otherwise inactive ad set or ad excludes the whole campaign.
+ * Every campaign with Meta status ACTIVE is still audited for the SOP and rated as before; this
+ * only decides which ones count and show as Active.
  */
 
-export type DeliveryState = 'DELIVERING' | 'NO_ACTIVE_ADS' | 'NO_ACTIVE_AD_SETS' | 'ENDED' | 'SCHEDULED' | 'UNKNOWN';
+export type DeliveryState =
+  | 'ACTIVE'
+  | 'HAS_INACTIVE_AD_SETS'
+  | 'HAS_INACTIVE_ADS'
+  | 'NO_ACTIVE_AD_SETS'
+  | 'NO_ACTIVE_ADS'
+  | 'ENDED'
+  | 'SCHEDULED'
+  | 'UNKNOWN'
+  /** Recorded by an earlier version with a looser rule; treated as not yet checked. */
+  | 'DELIVERING';
 
 export const DELIVERY_LABEL: Record<DeliveryState, string> = {
-  DELIVERING: 'Delivering',
-  NO_ACTIVE_ADS: 'No active ads',
-  NO_ACTIVE_AD_SETS: 'No active ad sets',
+  ACTIVE: 'Active',
+  HAS_INACTIVE_AD_SETS: 'Some ad sets not active',
+  HAS_INACTIVE_ADS: 'Some ads not active',
+  NO_ACTIVE_AD_SETS: 'No ad sets',
+  NO_ACTIVE_ADS: 'No ads',
   ENDED: 'Ended',
   SCHEDULED: 'Scheduled',
-  UNKNOWN: 'Delivery unknown',
+  UNKNOWN: 'Ad set / ad status not readable',
+  DELIVERING: 'Not checked yet (refresh)',
 };
+
+/** Reasons a campaign with Meta status ACTIVE is not counted as Active. */
+export const EXCLUSION_REASONS = ['HAS_INACTIVE_AD_SETS', 'HAS_INACTIVE_ADS', 'NO_ACTIVE_AD_SETS', 'NO_ACTIVE_ADS', 'ENDED', 'SCHEDULED', 'UNKNOWN'] as const;
+export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];
+
+/** True when this campaign's state was worked out with the strict rule (not missing or from an older version). */
+export const deliveryChecked = (d: DeliveryState | null | undefined): d is Exclude<DeliveryState, 'DELIVERING'> => Boolean(d) && d !== 'DELIVERING';
 
 interface Timed {
   start_time?: string;
@@ -26,31 +44,28 @@ interface Timed {
 }
 
 /**
- * Delivery of one campaign from what the sync read: the campaign (Meta status ACTIVE), its ad
- * sets with effective_status ACTIVE and its ads with effective_status ACTIVE. `adsKnown` is false
- * when Meta did not let the ads be read.
+ * Strict state of one campaign (whose own effective_status is ACTIVE) from ALL its ad sets and
+ * ALL its ads in every status. `childrenKnown` is false when Meta did not let them be read.
  */
 export function deliveryState(
   campaign: Timed,
-  activeAdSets: (Timed & { id: string })[],
-  activeAds: { adset_id?: string }[],
+  adSets: (Timed & { id: string; effective_status?: string })[],
+  ads: { adset_id?: string; effective_status?: string }[],
   now: Date,
-  adsKnown = true,
-): DeliveryState {
+  childrenKnown = true,
+): Exclude<DeliveryState, 'DELIVERING'> {
   const t = now.getTime();
   const past = (iso?: string) => Boolean(iso) && Date.parse(iso!) <= t;
   const future = (iso?: string) => Boolean(iso) && Date.parse(iso!) > t;
   if (past(campaign.stop_time)) return 'ENDED';
-  if (activeAdSets.length === 0) return 'NO_ACTIVE_AD_SETS';
-  const running = activeAdSets.filter((s) => !past(s.end_time));
-  if (running.length === 0) return 'ENDED';
-  if (!adsKnown) return 'UNKNOWN';
-  const runningIds = new Set(running.map((s) => s.id));
-  const ads = activeAds.filter((a) => a.adset_id && runningIds.has(a.adset_id));
+  if (!childrenKnown) return 'UNKNOWN';
+  if (adSets.length === 0) return 'NO_ACTIVE_AD_SETS';
+  if (adSets.some((s) => s.effective_status !== 'ACTIVE')) return 'HAS_INACTIVE_AD_SETS';
+  if (adSets.some((s) => past(s.end_time))) return 'ENDED';
   if (ads.length === 0) return 'NO_ACTIVE_ADS';
-  const setsWithAds = running.filter((s) => ads.some((a) => a.adset_id === s.id));
-  if (future(campaign.start_time) || setsWithAds.every((s) => future(s.start_time))) return 'SCHEDULED';
-  return 'DELIVERING';
+  if (ads.some((a) => a.effective_status !== 'ACTIVE')) return 'HAS_INACTIVE_ADS';
+  if (future(campaign.start_time) || adSets.every((s) => future(s.start_time))) return 'SCHEDULED';
+  return 'ACTIVE';
 }
 
 /** Campaigns per Meta effective_status for one ad account, every status, unique campaign IDs. */
@@ -66,18 +81,20 @@ export interface MetaCampaignStatusCounts {
 export interface AccountCampaignCounts {
   metaAccountId: string;
   name: string;
-  /** Null when this audit has no status listing for the account (older audits, or refused). */
+  /** All statuses, unique campaign IDs. Null when this audit has no status listing for the account. */
   total: number | null;
-  active: number | null;
+  /** Campaigns whose own Meta status is ACTIVE, from the status listing. */
+  metaActive: number | null;
   paused: number | null;
   archived: number | null;
   deleted: number | null;
   other: number | null;
-  /** Campaigns with Meta status ACTIVE that the tracker audited. */
+  /** Campaigns with Meta status ACTIVE that were audited. */
   audited: number;
-  /** Of the audited: delivering, i.e. what Ads Manager calls Active. */
-  delivering: number;
-  notDelivering: Record<Exclude<DeliveryState, 'DELIVERING'>, number>;
+  /** Strictly active: campaign, all ad sets and all ads ACTIVE. */
+  active: number;
+  /** Audited but not strictly active, by reason. */
+  excluded: Record<ExclusionReason, number>;
   /** Meta's ACTIVE count equals the campaigns audited; null when there is no listing to compare. */
   reconciled: boolean | null;
   deletedIncluded: boolean | null;
@@ -86,13 +103,12 @@ export interface AccountCampaignCounts {
 export interface CampaignCountsSummary {
   accounts: AccountCampaignCounts[];
   all: AccountCampaignCounts;
-  /** Older audits did not record per-campaign delivery. */
-  deliveryKnown: boolean;
+  /** False for audits made before the strict check existed: refresh to get Active counts. */
+  activeKnown: boolean;
   lastSuccessfulSyncAt: string | null;
 }
 
-const NOT_DELIVERING_KEYS = ['NO_ACTIVE_ADS', 'NO_ACTIVE_AD_SETS', 'ENDED', 'SCHEDULED', 'UNKNOWN'] as const;
-const emptyNotDelivering = () => Object.fromEntries(NOT_DELIVERING_KEYS.map((k) => [k, 0])) as AccountCampaignCounts['notDelivering'];
+const emptyExcluded = () => Object.fromEntries(EXCLUSION_REASONS.map((k) => [k, 0])) as Record<ExclusionReason, number>;
 
 export function groupStatusCounts(byEffectiveStatus: Record<string, number>) {
   const g = { active: 0, paused: 0, archived: 0, deleted: 0, other: 0 };
@@ -107,8 +123,9 @@ export function groupStatusCounts(byEffectiveStatus: Record<string, number>) {
 }
 
 /**
- * Builds the counts for one audit: per ad account from Meta's status listing (all statuses) and
- * the audited campaigns' delivery, plus an All accounts row. Campaigns are counted by unique Meta ID.
+ * Counts for ONE audit (never mixed with older snapshots): per selected ad account from Meta's
+ * status listing and the strict state of each audited campaign, plus All accounts. Campaigns are
+ * counted once per Meta campaign ID; ad sets and ads are never counted as campaigns.
  */
 export function buildCampaignCounts(
   accounts: { metaAccountId: string; name: string; status: 'succeeded' | 'failed'; campaignCounts?: MetaCampaignStatusCounts | null }[],
@@ -119,12 +136,12 @@ export function buildCampaignCounts(
   const unique = campaigns.filter((c) => !seen.has(c.metaCampaignId) && seen.add(c.metaCampaignId));
   const rows = accounts.map((a): AccountCampaignCounts => {
     const mine = unique.filter((c) => c.account.metaAccountId === a.metaAccountId);
-    const notDelivering = emptyNotDelivering();
-    let delivering = 0;
+    const excluded = emptyExcluded();
+    let active = 0;
     for (const c of mine) {
-      const d = c.delivery ?? 'UNKNOWN';
-      if (d === 'DELIVERING') delivering++;
-      else notDelivering[d]++;
+      if (c.delivery === 'ACTIVE') active++;
+      else if (deliveryChecked(c.delivery)) excluded[c.delivery]++;
+      else excluded.UNKNOWN++;
     }
     const m = a.campaignCounts ?? null;
     const g = m ? groupStatusCounts(m.byEffectiveStatus) : null;
@@ -132,36 +149,36 @@ export function buildCampaignCounts(
       metaAccountId: a.metaAccountId,
       name: a.name,
       total: m?.total ?? null,
-      active: g?.active ?? null,
+      metaActive: g?.active ?? null,
       paused: g?.paused ?? null,
       archived: g?.archived ?? null,
       deleted: g?.deleted ?? null,
       other: g?.other ?? null,
       audited: mine.length,
-      delivering,
-      notDelivering,
+      active,
+      excluded,
       reconciled: g ? g.active === mine.length : null,
       deletedIncluded: m?.deletedIncluded ?? null,
     };
   });
-  const sum = (k: 'total' | 'active' | 'paused' | 'archived' | 'deleted' | 'other') =>
+  const sum = (k: 'total' | 'metaActive' | 'paused' | 'archived' | 'deleted' | 'other') =>
     rows.length && rows.every((r) => r[k] !== null) ? rows.reduce((s, r) => s + r[k]!, 0) : null;
-  const notDelivering = emptyNotDelivering();
-  for (const r of rows) for (const k of NOT_DELIVERING_KEYS) notDelivering[k] += r.notDelivering[k];
+  const excluded = emptyExcluded();
+  for (const r of rows) for (const k of EXCLUSION_REASONS) excluded[k] += r.excluded[k];
   const all: AccountCampaignCounts = {
     metaAccountId: 'all',
     name: 'All accounts',
     total: sum('total'),
-    active: sum('active'),
+    metaActive: sum('metaActive'),
     paused: sum('paused'),
     archived: sum('archived'),
     deleted: sum('deleted'),
     other: sum('other'),
     audited: rows.reduce((s, r) => s + r.audited, 0),
-    delivering: rows.reduce((s, r) => s + r.delivering, 0),
-    notDelivering,
+    active: rows.reduce((s, r) => s + r.active, 0),
+    excluded,
     reconciled: rows.length && rows.every((r) => r.reconciled !== null) ? rows.every((r) => r.reconciled) : null,
     deletedIncluded: rows.length && rows.every((r) => r.deletedIncluded !== null) ? rows.every((r) => r.deletedIncluded) : null,
   };
-  return { accounts: rows, all, deliveryKnown: unique.every((c) => c.delivery !== null), lastSuccessfulSyncAt };
+  return { accounts: rows, all, activeKnown: unique.every((c) => deliveryChecked(c.delivery)), lastSuccessfulSyncAt };
 }

@@ -61,17 +61,23 @@ export const world: GraphHandler = (r) => {
     };
   }
   if (r.path === 'act_1001/adsets') {
-    return {
-      body: {
-        data: [
-          { id: 's1', name: 'S1', campaign_id: 'c1', is_dynamic_creative: false, targeting: goodTargeting },
-          { id: 's2', name: 'S2', campaign_id: 'c2', is_dynamic_creative: false,
-            targeting: { ...goodTargeting, publisher_platforms: ['facebook', 'instagram', 'threads', 'messenger'] } },
-          { id: 's3', name: 'S3', campaign_id: 'c3', is_dynamic_creative: true, targeting: goodTargeting },
-          { id: 's4', name: 'S4', campaign_id: 'c4', is_dynamic_creative: false, daily_budget: '90000', targeting: goodTargeting },
-        ],
-      },
-    };
+    // Every status (Meta filters by the statuses asked for). c2 also has a PAUSED ad set.
+    const wanted: string[] = JSON.parse(r.params.get('effective_status') ?? '["ACTIVE"]');
+    const rows = [
+      { id: 's1', name: 'S1', campaign_id: 'c1', effective_status: 'ACTIVE', is_dynamic_creative: false, targeting: goodTargeting },
+      { id: 's2', name: 'S2', campaign_id: 'c2', effective_status: 'ACTIVE', is_dynamic_creative: false,
+        targeting: { ...goodTargeting, publisher_platforms: ['facebook', 'instagram', 'threads', 'messenger'] } },
+      { id: 's2p', name: 'S2 paused', campaign_id: 'c2', effective_status: 'PAUSED', is_dynamic_creative: false, targeting: goodTargeting },
+      { id: 's3', name: 'S3', campaign_id: 'c3', effective_status: 'ACTIVE', is_dynamic_creative: true, targeting: goodTargeting },
+      { id: 's4', name: 'S4', campaign_id: 'c4', effective_status: 'ACTIVE', is_dynamic_creative: false, daily_budget: '90000', targeting: goodTargeting },
+    ];
+    return { body: { data: rows.filter((a) => wanted.includes(a.effective_status)) } };
+  }
+  if (r.path === 'act_1001/ads' && r.params.get('fields') === 'id,campaign_id,adset_id,effective_status') {
+    // Inactive ads of the active campaigns: c4's only ad is paused.
+    const wanted: string[] = JSON.parse(r.params.get('effective_status')!);
+    expect(wanted).not.toContain('ACTIVE');
+    return { body: { data: [{ id: 'a4p', campaign_id: 'c4', adset_id: 's4', effective_status: 'PAUSED' }].filter((a) => wanted.includes(a.effective_status)) } };
   }
   if (r.path === 'act_1001/ads') {
     const creative = { id: 'cr', object_story_spec: { link_data: { message: 'Shop now', call_to_action: { type: 'SHOP_NOW' } } },

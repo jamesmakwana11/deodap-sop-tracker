@@ -110,7 +110,7 @@ async function handle(method: string, path: string, body: Record<string, unknown
     const run = data.runs.find((r) => r.id === m![1]);
     return run ? json({ run }) : error(404, 'Audit run not found.');
   }
-  if (p === '/sync/status') return json({ running: null, lastFinished: null });
+  if (p === '/sync/status') return json({ running: null, lastFinished: null, progress: null });
   if (p === '/sync') return error(400, `${NO_META} Refresh works once Meta is connected in the installed app.`);
   if (p === '/meta/status') {
     return json({

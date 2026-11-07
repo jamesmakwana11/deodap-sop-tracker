@@ -25,6 +25,7 @@ function readQuery(p: URLSearchParams): TrackerQuery {
     objective: (p.get('objective') as TrackerQuery['objective']) ?? undefined,
     sopStatus: (p.get('sopStatus') as TrackerQuery['sopStatus']) ?? undefined,
     search: p.get('search') ?? undefined,
+    activity: p.get('activity') === 'all' ? 'all' : undefined,
     sort: isSortKey(sort) ? sort : 'spend_desc',
   };
 }
@@ -96,7 +97,7 @@ export function DashboardPage() {
           </p>
 
           {data.counts && data.run.source === 'meta' && (
-            <Section title="Campaign counts" intro="Per ad account and for all accounts, matching Meta Ads Manager. Ratings and SOP results below cover every campaign with Meta status Active.">
+            <Section title="Campaign counts" intro="Per ad account and for all accounts. Active campaigns, ratings and SOP results below count only campaigns whose ad sets and ads are all Active; the tracker can show the rest with “Show”.">
               <CampaignCounts counts={data.counts} />
             </Section>
           )}

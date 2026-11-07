@@ -1,4 +1,4 @@
-import { MetaApiError, type GraphClient } from './graphClient.js';
+import { MetaApiError, type GraphClient, type GraphParams } from './graphClient.js';
 import { explainMetaError, isFieldPermissionError } from './permissions.js';
 import type { MetaCampaignStatusCounts } from '@sop/shared';
 import type { CampaignSnapshot, RawAd, RawAdSet, RawCampaign, RawInsight } from './types.js';
@@ -39,6 +39,67 @@ const ACTIVE = ['ACTIVE'];
 /** Every status a campaign can have in Meta (the values Meta accepts for campaign effective_status). */
 const ALL_CAMPAIGN_STATUSES = ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'];
 const STATUS_FIELDS = 'id,account_id,name,status,configured_status,effective_status';
+
+/** Ad set and ad statuses Meta accepts in effective_status filters. */
+const ALL_ADSET_STATUSES = ['ACTIVE', 'PAUSED', 'DELETED', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES'];
+const INACTIVE_AD_STATUSES = ['PAUSED', 'DELETED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'CAMPAIGN_PAUSED', 'ARCHIVED', 'ADSET_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'];
+const CHILD_STATUS_FIELDS = 'id,campaign_id,adset_id,effective_status';
+/** Campaign IDs per filtered request. */
+const CAMPAIGN_FILTER_CHUNK = 50;
+
+interface RawChild {
+  id: string;
+  campaign_id: string;
+  adset_id?: string;
+  effective_status?: string;
+}
+
+/** Runs at most `n` of the given tasks at once. */
+function limiter(n: number) {
+  let active = 0;
+  const queue: (() => void)[] = [];
+  return <T>(task: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = () => {
+        active++;
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            queue.shift()?.();
+          });
+      };
+      if (active < n) run();
+      else queue.push(run);
+    });
+}
+
+/**
+ * Reads an ad set / ad edge for the given campaigns only (Meta `filtering` on campaign.id, in
+ * chunks), so old campaigns' history is never downloaded. If Meta rejects the filter, reads the
+ * account-wide list and keeps these campaigns' rows.
+ */
+async function readForCampaigns<T extends { id: string; campaign_id: string }>(
+  graph: GraphClient,
+  act: string,
+  edge: 'adsets' | 'ads',
+  params: GraphParams,
+  campaignIds: string[],
+): Promise<T[]> {
+  const out: T[] = [];
+  try {
+    for (let i = 0; i < campaignIds.length; i += CAMPAIGN_FILTER_CHUNK) {
+      const chunk = campaignIds.slice(i, i + CAMPAIGN_FILTER_CHUNK);
+      out.push(...(await graph.getAll<T>(`${act}/${edge}`, { ...params, filtering: [{ field: 'campaign.id', operator: 'IN', value: chunk }] })));
+    }
+    return out;
+  } catch (err) {
+    const filterRejected = err instanceof MetaApiError && err.code === 100 && /filter/i.test(err.message);
+    if (!filterRejected) throw err;
+    const wanted = new Set(campaignIds);
+    return (await graph.getAll<T>(`${act}/${edge}`, params)).filter((r) => wanted.has(r.campaign_id));
+  }
+}
 
 /** Meta's cursor paging can repeat a row when data changes mid-read; keep each ID once. */
 const uniqueById = <T extends { id: string }>(rows: T[]): T[] => {
@@ -115,8 +176,15 @@ async function fetchAds(graph: GraphClient, act: string, notes: string[]): Promi
  * Reads up to date data for every active campaign of one account. `notes` collects what could
  * not be read (shown with the run), so a partial read is never silent.
  */
-export async function fetchAccountSnapshots(graph: GraphClient, account: AccountRef, now = new Date(), notes: string[] = []): Promise<CampaignSnapshot[]> {
+export async function fetchAccountSnapshots(
+  graph: GraphClient,
+  account: AccountRef,
+  now = new Date(),
+  notes: string[] = [],
+  onStep: (step: string) => void = () => {},
+): Promise<CampaignSnapshot[]> {
   const act = `act_${account.metaAccountId}`;
+  onStep('campaigns');
   const campaigns = uniqueById(
     await graph.getAll<RawCampaign>(`${act}/campaigns`, {
       fields: CAMPAIGN_FIELDS,
@@ -125,28 +193,48 @@ export async function fetchAccountSnapshots(graph: GraphClient, account: Account
     }),
   );
   if (campaigns.length === 0) return [];
+  const ids = campaigns.map((c) => c.id);
 
   let insightsUnavailable: string | null = null;
+  let inactiveAdsKnown = true;
   const adsNotesBefore = notes.length;
-  const [adSetsRaw, adsRaw, insights] = await Promise.all([
-    graph.getAll<RawAdSet>(`${act}/adsets`, { fields: ADSET_FIELDS, effective_status: ACTIVE, limit: 200 }),
-    fetchAds(graph, act, notes),
+  const limit = limiter(2); // at most two requests to this ad account at a time
+  onStep('ad sets, ads and insights');
+  const [adSetsRaw, adsRaw, inactiveAdsRaw, insights] = await Promise.all([
+    // Ad sets of these campaigns in EVERY status: the active ones are audited, all decide whether the campaign is Active.
+    limit(() => readForCampaigns<RawAdSet>(graph, act, 'adsets', { fields: ADSET_FIELDS, effective_status: ALL_ADSET_STATUSES, limit: 200 }, ids)),
+    limit(() => fetchAds(graph, act, notes)),
+    // Ads of these campaigns that are NOT active (light fields): one is enough to exclude the campaign.
+    limit(() =>
+      readForCampaigns<RawChild>(graph, act, 'ads', { fields: CHILD_STATUS_FIELDS, effective_status: INACTIVE_AD_STATUSES, limit: 500 }, ids).catch((err: unknown) => {
+        if (!isRefused(err)) throw err;
+        inactiveAdsKnown = false;
+        notes.push(`Inactive ads could not be listed, so campaigns of this account cannot be confirmed Active: ${explainMetaError(err, { accountId: account.metaAccountId })}`);
+        return [] as RawChild[];
+      }),
+    ),
     // Account-level insights return one row per campaign that delivered; no row means no spend.
-    graph.getAll<RawInsight>(`${act}/insights`, { level: 'campaign', date_preset: 'last_7d', fields: INSIGHT_FIELDS, limit: 500 }).catch((err: unknown) => {
-      if (!isRefused(err)) throw err;
-      insightsUnavailable = explainMetaError(err, { accountId: account.metaAccountId });
-      notes.push(`Performance insights were not readable, so campaigns are Not rated: ${insightsUnavailable}`);
-      return [] as RawInsight[];
-    }),
+    limit(() =>
+      graph.getAll<RawInsight>(`${act}/insights`, { level: 'campaign', date_preset: 'last_7d', fields: INSIGHT_FIELDS, limit: 500 }).catch((err: unknown) => {
+        if (!isRefused(err)) throw err;
+        insightsUnavailable = explainMetaError(err, { accountId: account.metaAccountId });
+        notes.push(`Performance insights were not readable, so campaigns are Not rated: ${insightsUnavailable}`);
+        return [] as RawInsight[];
+      }),
+    ),
   ]);
 
-  const adSets = uniqueById(adSetsRaw);
+  const allAdSets = uniqueById(adSetsRaw);
+  const adSets = allAdSets.filter((a) => a.effective_status === 'ACTIVE'); // audited, as before
   const ads = uniqueById(adsRaw);
-  // Ads were refused entirely (not just reduced fields): delivery cannot be worked out.
+  const inactiveAds = uniqueById(inactiveAdsRaw).filter((a) => a.effective_status !== 'ACTIVE');
+  // Ads were refused entirely (not just reduced fields): their status is unknown.
   const adsKnown = !notes.slice(adsNotesBefore).some((n) => n.startsWith('Ads were not readable'));
+  const childrenKnown = adsKnown && inactiveAdsKnown;
   const insightByCampaign = new Map(insights.map((i) => [i.campaign_id, i]));
   const snapshots: CampaignSnapshot[] = [];
 
+  if (campaigns.some((c) => c.objective === 'OUTCOME_LEADS' || c.objective === 'LEAD_GENERATION')) onStep('first-14-day insights for Leads');
   for (const campaign of campaigns) {
     let insightsFirst14d: RawInsight | null = null;
     const isLeads = campaign.objective === 'OUTCOME_LEADS' || campaign.objective === 'LEAD_GENERATION';
@@ -163,11 +251,15 @@ export async function fetchAccountSnapshots(graph: GraphClient, account: Account
         console.warn(`First-14-day insights failed for campaign ${campaign.id}:`, (err as Error).message);
       }
     }
+    const activeAds = ads.filter((a) => a.campaign_id === campaign.id);
     snapshots.push({
       account,
       campaign,
       adSets: adSets.filter((a) => a.campaign_id === campaign.id),
-      ads: ads.filter((a) => a.campaign_id === campaign.id),
+      ads: activeAds,
+      allAdSets: allAdSets.filter((a) => a.campaign_id === campaign.id),
+      allAds: [...activeAds.map((a) => ({ id: a.id, adset_id: a.adset_id, effective_status: a.effective_status ?? 'ACTIVE' })), ...inactiveAds.filter((a) => a.campaign_id === campaign.id)],
+      childrenKnown,
       insights7d: insightByCampaign.get(campaign.id) ?? null,
       insightsFirst14d,
       insightsUnavailable,

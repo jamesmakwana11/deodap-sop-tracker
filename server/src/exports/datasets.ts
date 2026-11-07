@@ -144,8 +144,8 @@ async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<Exp
       { key: 'name', header: 'Ad account', width: 20 },
       { key: 'id', header: 'Account ID', width: 16 },
       { key: 'total', header: 'Total campaigns (all statuses)', type: 'number', width: 11 },
-      { key: 'delivering', header: 'Active in Ads Manager (delivering)', type: 'number', width: 11 },
-      { key: 'audited', header: 'Meta status Active (audited)', type: 'number', width: 11 },
+      { key: 'active', header: 'Active campaigns', type: 'number', width: 11 },
+      { key: 'audited', header: 'Campaign status Active (audited)', type: 'number', width: 11 },
       { key: 'paused', header: 'Paused', type: 'number', width: 8 },
       { key: 'archived', header: 'Archived', type: 'number', width: 8 },
       { key: 'deleted', header: 'Deleted', type: 'number', width: 8 },
@@ -156,7 +156,7 @@ async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<Exp
       name: r.name,
       id: r.metaAccountId === 'all' ? null : r.metaAccountId,
       total: r.total,
-      delivering: c.deliveryKnown ? r.delivering : null,
+      active: c.activeKnown ? r.active : null,
       audited: r.audited,
       paused: r.paused,
       archived: r.archived,
@@ -164,15 +164,14 @@ async function countsTable(run: AuditRunInfo, all: CampaignAudit[]): Promise<Exp
       other: r.other,
       check: r.reconciled === null ? null : r.reconciled ? 'Yes' : 'No',
     })),
-    'Counts are for the whole audit (filters not applied). Delivering = Meta status Active with an active ad in an active ad set that has not ended. Total counts each campaign ID once, in every status.',
+    'Counts are for the whole audit (filters not applied). Active = the campaign, all its ad sets and all its ads have Meta status Active (started, not ended). Total counts each campaign ID once, in every status.',
   );
 }
 
 function totalsFacts(campaigns: CampaignAudit[]): ExportTable {
   const t = buildDashboardSummary(campaigns).totals;
   return facts('Totals', [
-    ['Campaigns with Meta status Active (audited)', t.active],
-    ['Delivering (Active in Ads Manager)', campaigns.every((c) => c.delivery !== null) ? campaigns.filter((c) => c.delivery === 'DELIVERING').length : null],
+    ['Campaigns in this report', t.active],
     ['Good', t.good],
     ['Average', t.average],
     ['Bad', t.bad],

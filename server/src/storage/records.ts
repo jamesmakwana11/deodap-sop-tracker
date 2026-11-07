@@ -124,6 +124,8 @@ export interface AuditRunRecord {
   totals: RunTotals | null;
   /** Version of the SOP rule set the run was audited with (see settings "sop_rules:<version>"). */
   rulesVersion?: string;
+  /** Set when a server restart cut the run off and it was started again (same record, not a new one). */
+  resumedAt?: string;
 }
 
 export interface AdSetAuditRecord {

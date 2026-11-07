@@ -1,4 +1,4 @@
-import { DELIVERY_LABEL, MANUAL_CHECK_ITEMS, SALES_INDICATIVE_SPEND_INR, SOP_RULES, type CampaignAudit } from '@sop/shared';
+import { DELIVERY_LABEL, deliveryChecked, MANUAL_CHECK_ITEMS, SALES_INDICATIVE_SPEND_INR, SOP_RULES, type CampaignAudit } from '@sop/shared';
 import { Link } from 'react-router-dom';
 import { formatMainMetric, formatPercent, formatRupees } from '../../lib/format';
 import { RATING_TONE, SOP_STATUS_TONE } from '../../lib/labels';
@@ -63,9 +63,9 @@ export function CampaignTrackerTable({ campaigns, total }: { campaigns: Campaign
                     <Link to={`/campaigns/${c.id}`} className="text-ink hover:text-brand hover:underline">
                       {c.name}
                     </Link>
-                    {c.delivery && c.delivery !== 'DELIVERING' && (
-                      <span className="mt-0.5 block text-[12px] font-semibold text-avg" title="Meta status is Active, but Ads Manager does not show it as delivering">
-                        Not delivering: {DELIVERY_LABEL[c.delivery].toLowerCase()}
+                    {deliveryChecked(c.delivery) && c.delivery !== 'ACTIVE' && (
+                      <span className="mt-0.5 block text-[12px] font-semibold text-avg" title="Campaign status is Active, but not every ad set and ad is Active, so it is not counted as an Active campaign">
+                        Not active: {DELIVERY_LABEL[c.delivery!].toLowerCase()}
                       </span>
                     )}
                     <span className={`mt-0.5 block text-[12px] ${c.manual.failed ? 'text-bad' : 'text-muted'}`}>

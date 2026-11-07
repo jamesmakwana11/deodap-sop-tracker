@@ -1,3 +1,4 @@
+import { deliveryChecked } from './counts.js';
 import type { CampaignAudit, ObjectiveLabel, Rating, SopStatus } from './types.js';
 
 /** Campaign tracker filters and sorting — shared so the screen and the exported reports match. */
@@ -8,7 +9,15 @@ export interface TrackerFilters {
   objective?: ObjectiveLabel;
   sopStatus?: SopStatus;
   search?: string;
+  /** Default: only strictly active campaigns. "all": every audited campaign (Meta status Active). */
+  activity?: 'all';
 }
+
+/**
+ * In the default (Active) view: campaigns whose campaign, ad sets and ads are all ACTIVE.
+ * Audits from before the strict check have no state yet and stay visible until the next refresh.
+ */
+export const inActiveView = (c: Pick<CampaignAudit, 'delivery'>): boolean => !deliveryChecked(c.delivery) || c.delivery === 'ACTIVE';
 
 export const SORT_OPTIONS = {
   spend_desc: 'Spend, highest first',
@@ -26,6 +35,7 @@ export function filterCampaigns(campaigns: readonly CampaignAudit[], f: TrackerF
   const q = f.search?.trim().toLowerCase();
   return campaigns.filter(
     (c) =>
+      (f.activity === 'all' || inActiveView(c)) &&
       (!f.accountId || c.account.id === f.accountId) &&
       (!f.rating || c.rating === f.rating) &&
       (!f.objective || c.objective === f.objective) &&

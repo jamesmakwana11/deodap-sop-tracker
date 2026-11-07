@@ -51,7 +51,7 @@ export async function tick(now = new Date()): Promise<'ran' | 'idle'> {
 
 export function startScheduler(): void {
   if (timer) return;
-  void closeInterruptedRuns().then((n) => n && console.log(`Closed ${n} interrupted sync run(s)`));
+  void closeInterruptedRuns().then((n) => n && console.log(`Handled ${n} sync run(s) cut off by a restart`));
   const loop = () => tick().catch((err) => console.error('Scheduler tick failed', err));
   timer = setInterval(loop, TICK_MS);
   timer.unref();

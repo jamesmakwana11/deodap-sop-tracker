@@ -4,7 +4,7 @@ import { requireRole } from '../auth/middleware.js';
 import { notFoundError } from '../http/errors.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { findLastFinishedMetaRun, findRun, findRunningRun, listRuns } from '../repositories/runRepository.js';
-import { startSync } from '../services/syncService.js';
+import { currentProgress, startSync } from '../services/syncService.js';
 import { numericIdParams } from '../http/params.js';
 
 export const syncRouter = Router();
@@ -24,7 +24,7 @@ syncRouter.get(
   '/sync/status',
   requireRole('viewer'),
   asyncHandler(async (_req, res) => {
-    const body: SyncStatusResponse = { running: await findRunningRun(), lastFinished: await findLastFinishedMetaRun() };
+    const body: SyncStatusResponse = { running: await findRunningRun(), lastFinished: await findLastFinishedMetaRun(), progress: currentProgress() };
     res.json(body);
   }),
 );

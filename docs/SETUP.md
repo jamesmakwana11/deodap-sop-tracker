@@ -122,7 +122,7 @@ to audit (e.g. DeoDap `153787105` and Dabster `3149110605291089`). New accounts 
 - **Refresh now** (top bar, auditors and admins) starts a refresh straight away; the dashboard reloads when it ends.
 - The daily refresh runs at `SYNC_TIME_IST` (default 07:30 IST). Admins can change or switch it off in
   **Meta & schedule**. If the server was down at that time, it catches up when it comes back.
-- Only one refresh runs at a time.
+- Only one refresh runs at a time (see *Refresh reliability* below).
 - If one ad account fails (for example a missing permission) the others are still audited and the run is
   marked *partial*, with the reason shown in History.
 
@@ -255,29 +255,53 @@ They are reported separately and listed under "What is off" when failed; they do
 
 ---
 
-### Campaign counts (why the dashboard and Ads Manager can differ)
+### Campaign counts: what counts as Active
 
-Meta gives every campaign an `effective_status`. **ACTIVE** only means the campaign itself is switched on. Ads
-Manager's **Active** means it is actually *delivering*: switched on, with at least one active ad in an active ad set
-that has not ended. A campaign can be ACTIVE in Meta but show in Ads Manager as *Ad sets inactive*, *Ads inactive*,
-*Completed* or *Scheduled*.
+A campaign is an **Active campaign** only when the campaign, **every** one of its ad sets and **every** one of its
+ads have Meta `effective_status` **ACTIVE** (and it has not ended or is not still scheduled). If even one ad set or
+ad is paused, off, archived, deleted, in review, in process, disapproved or otherwise not active, the whole campaign
+is left out of the **Active campaigns** tile, the ratings and SOP tiles, the group tables and the default tracker
+view. The parent campaign status alone is never trusted. Each campaign ID is counted once.
 
-The dashboard shows both, per ad account and for **All accounts** (section *Campaign counts*):
+Section *Campaign counts* on the dashboard shows, per ad account (e.g. DeoDap, Dabster) and for **All accounts**:
 
 | Column | Meaning |
 |---|---|
-| Total campaigns | Every campaign in the ad account, all statuses, each campaign ID once |
-| Active in Ads Manager | Delivering (matches Ads Manager's Active) — this is the **Active campaigns** tile |
-| Meta status Active (audited) | Every campaign with `effective_status` ACTIVE; all are audited for ratings and the SOP, as before |
-| Status Active, not delivering | Why not: no active ads, no active ad sets, ended, scheduled |
+| Total campaigns | Every campaign in the ad account, all statuses, each campaign ID once (also the **Total campaigns** tile) |
+| Active campaigns | Strictly active as above (the **Active campaigns** tile) |
+| Campaign status Active (audited) | Every campaign whose own `effective_status` is ACTIVE; all are still audited for the SOP |
+| Not counted as Active | Why: some ad sets not active, some ads not active, no ad sets, no ads, ended, scheduled |
 | Paused / Archived / Deleted / Other | By Meta status (Other = in process, with issues) |
 | Check | ✓ when Meta's count of ACTIVE campaigns equals the campaigns audited |
 
-The counts come from one extra read-only request per account (`act_<id>/campaigns` with
-`id,account_id,name,status,configured_status,effective_status` over all statuses, all pages); delivery uses the ad
-sets and ads the refresh already reads. Audits made before this version show "–" until the next refresh. Example
-from the DeoDap ad account on 7 Nov 2026: 70 campaigns with Meta status Active, of which 45 delivering (17 without
-active ads, 6 without active ad sets, 2 ended) — Ads Manager showed 45.
+The tracker's **Show** filter switches between *Active campaigns* (default) and *All with campaign status Active*;
+exports follow the same filter (`activity=all` in the export link). Unpublished drafts are not campaigns yet and are
+never counted. Only the latest audit is counted; older audits stay in History. Audits made before this version show
+"–" for Active until the next refresh.
+
+How it is read (all read-only): campaigns with status ACTIVE; for those campaigns only (filtered by campaign ID, 50 per
+request, all pages), their ad sets in every status and a light list of their non-active ads; plus one listing of all
+campaigns in every status for the totals. If Meta refuses the campaign filter, the tracker reads the account's ad sets
+and ads and filters them itself.
+
+Real example, DeoDap ad account, 7 Nov 2026: 70 campaigns with Meta status Active; 45 delivering in Ads Manager;
+**33 strictly active** — 12 of the 45 delivering ones have a paused/archived ad set (8) or a paused, archived,
+in-review or in-process ad (4). This strict rule is stricter than Ads Manager's "Active" (delivering), so the
+tile is lower than Ads Manager on purpose.
+
+### Refresh reliability
+
+- One refresh at a time: **Refresh now** is disabled while one runs, and a second request is refused (no extra
+  history record). Each attempt ends as exactly one record: *succeeded*, *partial* (names the failed account and why)
+  or *failed*. A partial or failed refresh is never shown as successful; the dashboard keeps the last good audit.
+- While it runs, a panel shows the account being read (e.g. *Account 2 of 2: Dabster*), the step, and any wait.
+  When it ends: *“Meta data loaded successfully. Please check your Dashboard.”*, or the failed accounts with the reason.
+- Meta rate limits (codes 4, 17, 32, 613, 80000–80014) are retried automatically with exponential back-off
+  (15 s, 30 s, 1, 2, 4, 5 min; longer when Meta says so), up to 6 times per request. The tracker also slows down when
+  Meta's usage headers report 75 % or more of the limit. Ad accounts are read one after another, with at most two
+  requests at a time per account.
+- If the server restarts during a refresh (e.g. a redeploy), the refresh starts again under the same history record.
+  Only if that happens twice is it marked failed with "Stopped twice by a server restart".
 
 ## 7. Reports and exports
 

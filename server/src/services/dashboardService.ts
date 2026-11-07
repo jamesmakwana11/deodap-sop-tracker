@@ -1,4 +1,4 @@
-import { buildCampaignCounts, buildDashboardSummary, type DashboardResponse } from '@sop/shared';
+import { buildCampaignCounts, buildDashboardSummary, filterCampaigns, type DashboardResponse } from '@sop/shared';
 import { notFoundError } from '../http/errors.js';
 import { findCampaignAudits, findCompletedRun, findLatestCompletedRun } from '../repositories/auditRepository.js';
 import { listRuns } from '../repositories/runRepository.js';
@@ -13,5 +13,7 @@ export async function getDashboard(runId?: string): Promise<DashboardResponse> {
   const accounts = run ? (runs.find((r) => r.id === run.id)?.accounts ?? []) : [];
   const lastOk = runs.find((r) => r.source === 'meta' && (r.status === 'succeeded' || r.status === 'partial'));
   const counts = buildCampaignCounts(accounts, campaigns, lastOk ? (lastOk.finishedAt ?? lastOk.startedAt) : null);
-  return { run, campaigns, summary: buildDashboardSummary(campaigns), counts };
+  // KPIs and summaries cover Active campaigns only (campaign, ad sets and ads all Active); the
+  // campaigns list keeps every audited one so the tracker can also show all.
+  return { run, campaigns, summary: buildDashboardSummary(filterCampaigns(campaigns, {})), counts };
 }

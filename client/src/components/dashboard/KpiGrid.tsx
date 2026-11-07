@@ -18,20 +18,22 @@ function StatCard({ value, label, sub, accent, valueColor }: Kpi) {
   );
 }
 
+const GRID: Record<number, string> = { 8: '2xl:grid-cols-8', 9: '2xl:grid-cols-9', 10: '2xl:grid-cols-10' };
+
 export function KpiGrid({ totals, counts }: { totals: DashboardTotals; counts?: CampaignCountsSummary }) {
-  // Active = delivering, as in Ads Manager, when this audit recorded delivery; the audit covers
-  // every campaign whose Meta status is Active, so the other tiles add up to that number.
-  const delivery = counts?.deliveryKnown && counts.all.audited > 0 ? counts.all : null;
+  // Active campaigns = strictly active: the campaign, every ad set and every ad Active (Meta effective_status).
+  // totals come from the same strict set, so the rating and SOP tiles add up to it.
+  const strict = counts?.activeKnown !== false;
+  const total = counts?.all.total ?? null;
   const kpis: Kpi[] = [
-    delivery
-      ? {
-          value: delivery.delivering,
-          label: 'Active campaigns',
-          sub: `delivering · ${delivery.audited} with Meta status Active${delivery.total !== null ? ` · ${delivery.total} total` : ''}`,
-          accent: 'border-t-brand',
-          valueColor: 'text-brand',
-        }
-      : { value: totals.active, label: 'Active campaigns', accent: 'border-t-brand', valueColor: 'text-brand' },
+    {
+      value: totals.active,
+      label: 'Active campaigns',
+      sub: strict ? undefined : 'Refresh now to check ad sets and ads',
+      accent: 'border-t-brand',
+      valueColor: 'text-brand',
+    },
+    ...(total !== null ? [{ value: total, label: 'Total campaigns (all statuses)', accent: 'border-t-navy', valueColor: 'text-navy' }] : []),
     { value: totals.good, label: 'Rated Good', accent: 'border-t-good', valueColor: 'text-good' },
     { value: totals.average, label: 'Rated Average', accent: 'border-t-[#e3a400]', valueColor: 'text-avg' },
     { value: totals.bad, label: 'Rated Bad', accent: 'border-t-bad', valueColor: 'text-bad' },
@@ -45,7 +47,7 @@ export function KpiGrid({ totals, counts }: { totals: DashboardTotals; counts?: 
   }
 
   return (
-    <div className={`mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 ${kpis.length > 8 ? '2xl:grid-cols-9' : '2xl:grid-cols-8'}`}>
+    <div className={`mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 ${GRID[kpis.length] ?? '2xl:grid-cols-5'}`}>
       {kpis.map((k) => (
         <StatCard key={k.label} {...k} />
       ))}

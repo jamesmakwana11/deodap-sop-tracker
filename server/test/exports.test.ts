@@ -134,7 +134,7 @@ describe('every report in every format', () => {
     // Nothing else was marked: every other manual item is Pending, never passed automatically.
     expect(csvRows(manual).filter((l) => l.includes(',Verified,'))).toHaveLength(0);
 
-    const failed = csvRows((await binary(viewer, '/api/exports/failed.csv')).body as Buffer);
+    const failed = csvRows((await binary(viewer, '/api/exports/failed.csv?activity=all')).body as Buffer);
     expect(failed[0]).toContain('Check type');
     expect(failed.some((l) => l.includes(',Manual,Coupon accuracy,'))).toBe(true);
     expect(failed.some((l) => l.includes(',Automated,'))).toBe(true);
@@ -154,12 +154,12 @@ describe('filters and scope', () => {
   });
 
   it('builds Word and Excel reports with the filters described and a sheet per table', async () => {
-    const res = await binary(viewer, '/api/exports/rules.xlsx?objective=Sales');
+    const res = await binary(viewer, '/api/exports/rules.xlsx?objective=Sales&activity=all');
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body as unknown as ArrayBuffer);
     expect(wb.worksheets.map((w) => w.name)).toEqual(['About', 'SOP rule set', 'Rating rules', 'Results per SOP rule', 'Compliance per campaign']);
     const about = wb.getWorksheet('About')!.getColumn(1).values.filter(Boolean).join('\n');
-    expect(about).toMatch(/Filtered to objective Sales/);
+    expect(about).toMatch(/incl\. ones with inactive ad sets or ads\), filtered to objective Sales/);
     expect(wb.getWorksheet('Compliance per campaign')!.getRow(1).getCell(1).value).toBe('Ad account');
 
     const docx = await textOf('docx', (await binary(viewer, '/api/exports/accounts.docx?scope=all')).body as Buffer);
@@ -178,9 +178,11 @@ describe('filters and scope', () => {
   it('compares the two latest audits and explains when there is only one', async () => {
     expect((await viewer.get('/api/exports/comparison.csv')).status).toBe(404);
     await sync(new Date(NOW.getTime() + 86_400_000));
-    const rows = csvRows((await binary(viewer, '/api/exports/comparison.csv')).body as Buffer);
+    const rows = csvRows((await binary(viewer, '/api/exports/comparison.csv?activity=all')).body as Buffer);
     expect(rows[0]).toContain('Rating before');
     expect(rows.length - 1).toBe(4);
+    // Default: Active campaigns only (in the fake world only c1 has every ad set and ad active).
+    expect(csvRows((await binary(viewer, '/api/exports/comparison.csv')).body as Buffer).length - 1).toBe(1);
   });
 
   it('rejects unknown reports, formats and bad parameters', async () => {

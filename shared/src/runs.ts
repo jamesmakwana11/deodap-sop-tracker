@@ -40,7 +40,24 @@ export interface RunListItem {
   totals: RunTotals;
 }
 
+/** Live progress of the running sync (held in memory by the server). */
+export interface SyncProgress {
+  runId: string;
+  /** 1-based number of the ad account being read. */
+  accountIndex: number;
+  accountCount: number;
+  accountName: string | null;
+  /** What is being read right now. */
+  step: string;
+  /** Set while waiting for Meta's rate limit: when the next try happens, and why. */
+  waitingUntil: string | null;
+  waitingMessage: string | null;
+  doneAccounts: string[];
+  failedAccounts: { name: string; error: string }[];
+}
+
 export interface SyncStatusResponse {
   running: RunListItem | null;
   lastFinished: RunListItem | null;
+  progress: SyncProgress | null;
 }

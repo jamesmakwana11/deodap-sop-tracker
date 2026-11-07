@@ -44,7 +44,7 @@ describe('Excel report', () => {
     const auditor = (await signedIn(app, 'auditor')).agent;
     await auditor.put('/api/manual-checks/c1/coupon').set(CSRF).send({ status: 'FAILED', note: 'Code DIWALI10 expired' });
 
-    const res = await binary(viewer, '/api/reports/latest.xlsx');
+    const res = await binary(viewer, '/api/reports/latest.xlsx?activity=all');
     expect(res.status).toBe(200);
     expect(res.headers['content-disposition']).toMatch(/attachment; filename="deodap-sop-audit-2026-\d\d-\d\d-run\d+\.xlsx"/);
     const wb = await workbook(res.body as Buffer);
@@ -67,7 +67,7 @@ describe('Excel report', () => {
     const wb = await workbook(res.body as Buffer);
     expect(wb.getWorksheet('Campaigns')!.rowCount).toBe(2);
     const summary = wb.getWorksheet('Summary')!.getSheetValues().flat();
-    expect(summary).toContain('Filtered to rating good (1 of 4 campaigns)');
+    expect(summary).toContain('Active campaigns (campaign, ad sets and ads all Active), filtered to rating good: 1 of 4 audited');
   });
 
   it('rejects unknown filter values and missing runs', async () => {

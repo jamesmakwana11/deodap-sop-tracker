@@ -154,4 +154,10 @@ export interface CampaignSnapshot {
   insightsUnavailable?: string | null;
   /** False when Meta refused the ads, so delivery is unknown. */
   adsKnown?: boolean;
+  /** Every ad set of the campaign in every status (adSets holds only the active ones, which are audited). */
+  allAdSets?: RawAdSet[];
+  /** Every ad of the campaign in every status (status fields only). */
+  allAds?: { id: string; adset_id?: string; effective_status?: string }[];
+  /** False when Meta did not let all ad sets / ads be read; then the campaign cannot be confirmed Active. */
+  childrenKnown?: boolean;
 }
